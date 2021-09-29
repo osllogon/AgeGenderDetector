@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Folders
+Datos/
+
+# Git LFS
+.gitattributes
