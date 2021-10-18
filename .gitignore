@@ -130,6 +130,7 @@ dmypy.json
 
 # Folders
 Datos/
+data/
 
 # Git LFS
 .gitattributes
