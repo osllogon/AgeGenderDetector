@@ -88,10 +88,11 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
 
 def accuracy(predicted: torch.Tensor, label: torch.Tensor):
     """
-    Calculates the accuracy of the prediction
+    Calculates the accuracy of the prediction.
+    It considers predicted to be class 1 if probability is higher than 0.5
     :param predicted: the input prediction
     :param label: the real label
     :return: returns the accuracy of the prediction (between 0 and 1)
     """
-    return ((predicted > 0.5).float() == label).float().mean().cpu().detach().numpy()
+    return ((predicted > 0).float() == label).float().mean().cpu().detach().numpy()
 

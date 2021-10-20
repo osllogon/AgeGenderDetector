@@ -28,17 +28,18 @@ def train(args):
     n_epochs: int = args.n_epochs
     batch_size: int = args.batch_size
     num_workers: int = 0 if args.debug else args.num_workers
-    dimensions: List[List[int]] = [[32, 64, 128, 256], [32, 64, 128]]
-    scheduler_modes = ['min_loss', 'max_acc', 'max_val_acc']  # min_loss, max_acc, max_val_acc
+    dimensions: List[List[int]] = [[32, 64, 128, 256]]
+    scheduler_modes = ['max_val_acc']  # min_loss, max_acc, max_val_acc
     residual: bool = not args.non_residual
     max_pooling: bool = not args.non_max_pooling
 
     model = None
     loss = torch.nn.BCEWithLogitsLoss()
     transforms = {
+        # "none": None,
         "h": torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip()]),
-        "h128": torchvision.transforms.Compose([torchvision.transforms.Resize((128, 128)),
-                                                torchvision.transforms.RandomHorizontalFlip()]),
+        # "h128": torchvision.transforms.Compose([torchvision.transforms.Resize((128, 128)),
+        #                                         torchvision.transforms.RandomHorizontalFlip()]),
         "h_cj9": torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip(),
                                                  torchvision.transforms.ColorJitter(0.9, 0.9, 0.9, 0.1)]),
         "h_cj5": torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip(),
@@ -47,7 +48,7 @@ def train(args):
 
     for t, transform in transforms.items():
         # load train and test data
-        loader_train, loader_valid, _ = load_data(f"{args.data_path}/UTKFace", num_workers=num_workers,
+        loader_train, loader_valid, _ = load_data(f"{args.data_path}", num_workers=num_workers,
                                                   batch_size=batch_size, transform=transform, lengths=(0.7, 0.15, 0.15))
 
         for optim in optimizers:
@@ -57,7 +58,7 @@ def train(args):
                         # Tensorboard
                         global_step = 0
                         best_val_acc = 0
-                        name_model = f"{optim}/{s_mode}/{batch_size}/{dim}/{lr}/" \
+                        name_model = f"{optim}/{t}/{s_mode}/{batch_size}/{dim}/{lr}/" \
                                      f"residual={residual}/maxPool={max_pooling}"
                         train_logger = tb.SummaryWriter(path.join(args.log_dir, 'train', name_model), flush_secs=1)
                         valid_logger = tb.SummaryWriter(path.join(args.log_dir, 'valid', name_model), flush_secs=1)
@@ -138,6 +139,7 @@ def train(args):
 
                             # Save the model
                             if (epoch % steps_validate == steps_validate - 1) and val_acc > best_val_acc:
+                                print(f"Best val acc {epoch}: {val_acc}")
                                 save_model(model, f"models/{name_model}".replace('/', '_'))
                                 best_val_acc = val_acc
 
@@ -159,12 +161,12 @@ if __name__ == '__main__':
     args_parser = ArgumentParser()
 
     args_parser.add_argument('--log_dir', default="./logs")
-    args_parser.add_argument('--data_path', default="./data")
+    args_parser.add_argument('--data_path', default="./data/UTKFace")
 
     # Hyper-parameters
     args_parser.add_argument('-lrs', nargs='+', type=float, default=[1e-3], help='learning rates')
     # args_parser.add_argument('-opt', '--optimizers', type=str, nargs='+', default=["adam"], help='optimizer to use')
-    args_parser.add_argument('-n', '--n_epochs', default=150, type=int, help='number of epochs to train on')
+    args_parser.add_argument('-n', '--n_epochs', default=100, type=int, help='number of epochs to train on')
     args_parser.add_argument('-b', '--batch_size', default=64, type=int, help='size of batches to use')
     args_parser.add_argument('-w', '--num_workers', default=2, type=int,
                              help='number of workers to use for data loading')
