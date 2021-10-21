@@ -1,0 +1,1 @@
+{'in_channels': 3, 'out_channels': 1, 'dim_layers': [32, 64, 128, 256], 'residual': True, 'max_pooling': True, 'acc_gender': 0.90823865, 'mse_age': 0, 'epoch': 59}

@@ -64,7 +64,7 @@ class CNNClassifier(torch.nn.Module):
 
     def __init__(self, dim_layers:List[int] = [32, 64, 128, 256], in_channels:int=3, out_channels:int = 1,
                  input_normalization: bool = True, residual: bool = True, in_kernel_size: bool = 7,
-                 in_stride:int = 2, max_pooling:bool = True):
+                 in_stride:int = 2, max_pooling:bool = True, **kwargs):
         """
         Initialization of the classifier
         Architecture is defined here
@@ -133,22 +133,17 @@ def save_model(model: torch.nn.Module, filename: str = None) -> None:
 
     for n, m in model_factory.items():
         if isinstance(model, m):
-            return save(model.state_dict(), path.join(path.dirname(path.abspath(__file__)),
-                                                      f"{filename if filename is not None else n}.th"))
+            return save(model.state_dict(), f"{filename if filename is not None else n}.th")
     raise Exception(f"Model type {type(model)} not supported")
 
 
-def load_model(model_path: str = None, model_type: str = 'cnn') -> torch.nn.Module:
+def load_model(model_path: str, model: torch.nn.Module) -> torch.nn.Module:
     """
     Loads a model than has been previously saved
     :param model_path: path from where to load model
-    :param model_type: model type to load
+    :param model: model into which to load the saved model
     :return: the loaded model
     """
     from torch import load
-    if model_path is None:
-        from os import path
-        model_path = path.join(path.dirname(path.abspath(__file__)), f"{model_type}.th")
-    loaded = model_factory[model_type]()
-    loaded.load_state_dict(load(model_path, map_location='cpu'))
-    return loaded
+    model.load_state_dict(load(model_path, map_location='cpu'))
+    return model

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Any, Dict
 
 import numpy as np
 import torch
@@ -15,6 +15,7 @@ class AgeGenderDataset(Dataset):
     """
     Class that represents a dataset to train the AgeGender classifier
     """
+
     def __init__(self, image_names: List[str or pathlib.Path], transform=None):
         """
         Initializer for the dataset
@@ -70,13 +71,12 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
 
     # Create datasets
     datasets = [AgeGenderDataset(image_names[:lengths[0]], **kwargs)]
-    datasets.extend([AgeGenderDataset(image_names[lengths[k]:lengths[k+1]]) for k in range(len(lengths) - 1)])
+    datasets.extend([AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]]) for k in range(len(lengths) - 1)])
     datasets.append(AgeGenderDataset(image_names[lengths[-1]:]))
 
     # Return DataLoaders for the datasets
     return tuple(DataLoader(k, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                             drop_last=drop_last) for k in datasets)
-
 
     # dataset = AgeGenderDataset(dataset_path, **kwargs)
     # lengths = [int(k * len(dataset)) for k in lengths[:-1]]
@@ -96,3 +96,24 @@ def accuracy(predicted: torch.Tensor, label: torch.Tensor):
     """
     return ((predicted > 0).float() == label).float().mean().cpu().detach().numpy()
 
+
+def save_dict(d: Dict, path: str) -> None:
+    """
+    Saves a dictionary to a file in plain text
+    :param d: dictionary to save
+    :param path: path of the file where the dictionary will be saved
+    """
+    with open(path, 'w') as file:
+        file.write(str(d))
+
+
+def load_dict(path: str) -> Dict:
+    """
+    Loads a dictionary from a file in plain text
+    :param path: path where the dictionary was saved
+    :return: the loaded dictionary
+    """
+    with open(path, 'r') as file:
+        from ast import literal_eval
+        loaded = dict(literal_eval(file.read()))
+    return loaded
