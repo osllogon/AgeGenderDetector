@@ -47,7 +47,7 @@ class AgeGenderDataset(Dataset):
         # images: edad_género_raza_datosirrelevantes.jpg.chip.jpg
         name_split = self.image_names[idx].name.split('_')
         # image, age, gender
-        return self.to_tensor(image), float(name_split[0]), float(name_split[1])
+        return self.to_tensor(image), np.float32(name_split[0]), np.float32(name_split[1])
 
 
 def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
@@ -78,21 +78,14 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
     return tuple(DataLoader(k, num_workers=num_workers, batch_size=batch_size, shuffle=True,
                             drop_last=drop_last) for k in datasets)
 
-    # dataset = AgeGenderDataset(dataset_path, **kwargs)
-    # lengths = [int(k * len(dataset)) for k in lengths[:-1]]
-    # lengths.append(len(dataset) - sum(lengths))
-    # datasets = random_split(dataset, tuple(lengths), generator=torch.Generator().manual_seed(42))
-    # return tuple(DataLoader(k, num_workers=num_workers, batch_size=batch_size, shuffle=True,
-    #                         drop_last=drop_last) for k in datasets)
-
 
 def accuracy(predicted: torch.Tensor, label: torch.Tensor):
     """
-    Calculates the accuracy of the prediction.
+    Calculates the accuracy of the prediction and returns a numpy number.
     It considers predicted to be class 1 if probability is higher than 0.5
     :param predicted: the input prediction
     :param label: the real label
-    :return: returns the accuracy of the prediction (between 0 and 1)
+    :return: returns the accuracy of the prediction (between 0 and 1), in the cpu and detached as numpy
     """
     return ((predicted > 0).float() == label).float().mean().cpu().detach().numpy()
 

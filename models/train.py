@@ -1,5 +1,5 @@
 from os import path
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 import torchvision.transforms
@@ -20,32 +20,48 @@ def train(args):
     print(device)
 
     # Number of epoch after which to validate and save model
-    steps_validate = 10
+    steps_validate = 1
 
     # Hyperparameters
+    # learning rates
     lrs: List[int] = args.lrs
+    # optimizer to use for training
     optimizers: List[str] = ["adam"]  # adam, sgd
+    # number of epochs to train on
     n_epochs: int = args.n_epochs
+    # size of batches to use
     batch_size: int = args.batch_size
+    # number of workers (processes) to use for data loading
     num_workers: int = 0 if args.debug else args.num_workers
-    dimensions: List[List[int]] = [[32, 64, 128, 256]]
-    scheduler_modes = ['max_val_acc']  # min_loss, max_acc, max_val_acc
+    # dimensions of the model to use (look at model for more detail)
+    dimensions: List[List[int]] = [[32, 64, 128]]
+    # scheduler mode to use for the learning rate scheduler
+    scheduler_modes = ['min_mse']  # min_loss, max_acc, max_val_acc, (age) min_mse
+    # whether to use residual connections
     residual: bool = not args.non_residual
+    # whether to use max pooling instead of stride in convolutions
     max_pooling: bool = not args.non_max_pooling
+    # whether to use flatten instead of mean pooling before the output linear layer
+    flatten_out_layer: bool = args.flatten_out_layer
 
     # For age and gender model
-    loss_age_weights = args.loss_age_weight if args.age_gender else [0]
+    # weight for the age loss
+    loss_age_weights = args.loss_age_weight if args.age_gender else [0.0]
 
     model = None
-    loss_gender = torch.nn.BCEWithLogitsLoss()  # sigmoid + BCELoss (good for 2 classes classification)
-    loss_age = torch.nn.MSELoss()
+    loss_gender = torch.nn.BCEWithLogitsLoss().to(device)  # sigmoid + BCELoss (good for 2 classes classification)
+    loss_age = torch.nn.MSELoss().to(device)
+    # transforms to use for data augmentation
     transforms = {
         # "none": None,
         "h": torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip()]),
+        # "h128": torchvision.transforms.Compose([torchvision.transforms.Resize((128,128)),
+        #                                         torchvision.transforms.RandomHorizontalFlip()]),
         # "h_cj9": torchvision.transforms.Compose([torchvision.transforms.RandomHorizontalFlip(),
         #                                          torchvision.transforms.ColorJitter(0.9, 0.9, 0.9, 0.1)]),
     }
 
+    # training loop
     for age_weight in loss_age_weights:
         for t, transform in transforms.items():
             # load train and test data
@@ -68,9 +84,11 @@ def train(args):
                             del model
                             dict_model = {
                                 # dictionary with model information
+                                "name": name_model,
                                 "in_channels": 3,
                                 "out_channels": 2 if args.age_gender else 1,
                                 "dim_layers": dim,
+                                "block_conv_layers": 3,
                                 "residual": residual,
                                 "max_pooling": max_pooling,
                                 "acc_gender": 0,
@@ -78,8 +96,6 @@ def train(args):
                                 "epoch": 0,
                             }
                             model = CNNClassifier(**dict_model).to(device)
-                            # model = CNNClassifier(in_channels=3, out_channels=1, dim_layers=dim, residual=residual,
-                            #                       max_pooling=max_pooling).to(device)
 
                             if optim == "sgd":
                                 optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
@@ -88,7 +104,7 @@ def train(args):
                             else:
                                 raise Exception("Optimizer not configured")
 
-                            if s_mode == "min_loss":
+                            if s_mode == "min_loss" or "min_mse":
                                 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10)
                             elif s_mode == "max_acc" or s_mode == "max_val_acc":
                                 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10)
@@ -115,7 +131,7 @@ def train(args):
                                     loss_val = loss_val_gender
                                     if args.age_gender:
                                         loss_val_age = loss_age(pred[:, 1], age)
-                                        loss_val_age += age_weight * loss_val_age
+                                        loss_val += age_weight * loss_val_age
 
                                     # Do back propagation
                                     optimizer.zero_grad()
@@ -140,7 +156,7 @@ def train(args):
 
                                     val_acc_gender.append(accuracy(pred[:, 0], gender))
                                     if args.age_gender:
-                                        val_mse_age.append(loss_age(pred[:, 1], age))
+                                        val_mse_age.append(loss_age(pred[:, 1], age).cpu().detach().numpy())
 
                                 train_loss = np.mean(train_loss)
                                 train_acc_gender = np.mean(train_acc_gender)
@@ -153,6 +169,8 @@ def train(args):
                                 # Step the scheduler to change the learning rate
                                 if s_mode == "min_loss":
                                     scheduler.step(train_loss)
+                                elif s_mode == "min_mse":
+                                    scheduler.step(train_loss_age)
                                 elif s_mode == "max_acc":
                                     scheduler.step(train_acc_gender)
                                 elif s_mode == "max_val_acc":
@@ -171,7 +189,9 @@ def train(args):
                                         valid_logger.add_scalar('mse', val_mse_age, global_step=global_step)
 
                                 # Save the model
-                                if (epoch % steps_validate == steps_validate - 1) and val_acc_gender > dict_model["acc_gender"]:
+                                if (epoch % steps_validate == steps_validate - 1) and \
+                                        (val_acc_gender > dict_model["acc_gender"] or args.age_gender):
+                                    # todo if
                                     print(f"Best val acc (gender, mse) {epoch}: {val_acc_gender}, {val_mse_age}")
                                     name_path = name_model.replace('/', '_')
                                     save_model(model, f"{args.save_path}/{name_path}")
@@ -181,21 +201,81 @@ def train(args):
                                     save_dict(dict_model, f"{args.save_path}/{name_path}.dict")
 
 
-def validate(args, metric_func):
+def test(args) -> None:
     """
-    Calculates the validation metric of the model given in args
+    Calculates the metric on the test set of the model given in args.
+    Prints the result and saves it in the dictionary files.
     :param args: ArgumentParser with args to run the training (goto main to see the options)
-    :param metric_func: function that calculates a metric for validation
-    :return: validation result according to a the metric_func given
     """
-    # todo do the validate function
-    # todo save also data of the process
     import pathlib
     device = torch.device('cuda' if torch.cuda.is_available() and not (args.cpu or args.debug) else 'cpu')
+    print(device)
+    batch_size: int = args.batch_size
+    num_workers: int = 0 if args.debug else args.num_workers
     model_names = list(pathlib.Path(args.save_path).glob('*.th'))
+    _, _, loader_test = load_data(f"{args.data_path}", num_workers=num_workers,
+                                  batch_size=batch_size, lengths=(0.7, 0.15, 0.15))
+    model = None
+    runs = args.test
+
     for p in model_names:
-        dict_model = load_dict(f"{args.save_path}/{p[:-3]}.dict")
+        name = p.name.replace('.th', '')
+        dict_model = load_dict(f"{args.save_path}/{name}.dict")
+        del model
         model = load_model(p, CNNClassifier(**dict_model)).to(device)
+        loss_age = torch.nn.MSELoss().to(device)
+
+        test_acc_gender = []
+        test_mse_age = []
+        model.eval()
+
+        for k in range(runs):
+            run_acc_gender = []
+            run_mse_age = []
+            for img, age, gender in loader_test:
+                img, age, gender = img.to(device), age.to(device), gender.to(device)
+                pred = model(img)
+
+                run_acc_gender.append(accuracy(pred[:, 0], gender))
+                if args.age_gender:
+                    run_mse_age.append(loss_age(pred[:, 1], age).cpu().detach().numpy())
+
+            test_acc_gender.append(np.mean(run_acc_gender))
+            if args.age_gender:
+                test_mse_age.append(np.mean(run_mse_age))
+
+        test_acc_gender = np.mean(test_acc_gender)
+        dict_result = {"test_acc_gender": test_acc_gender}
+        if args.age_gender:
+            test_mse_age = np.mean(test_mse_age)
+            dict_result["test_mse_age"] = test_mse_age
+
+        print(f"{name}: {dict_result}")
+        dict_model.update(dict_result)
+        save_dict(dict_model, f"{args.save_path}/{name}.dict")
+
+
+def predict(args, model_name: str, list_imgs: List[str], batch_size: int = 1, num_workers:int = 0, use_gpu:bool=True) -> List[Tuple]:
+    """
+    Makes a prediction on the input list of images using a certain model
+    :param args: ArgumentParser with args to run the training (goto main to see the options)
+    :param model_name: name of the file containing the model to be used
+    :param list_imgs: list of paths of the images used as input of the prediction
+    :return: list of predictions over the input images
+    """
+    # todo finish
+    import pathlib
+    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
+    print(device)
+
+
+
+
+
+    model_names = list(pathlib.Path(args.save_path).glob('*.th'))
+    _, _, loader_test = load_data(f"{args.data_path}", num_workers=num_workers,
+                                  batch_size=batch_size, lengths=(0.7, 0.15, 0.15))
+    model = None
     pass
 
 
@@ -208,6 +288,9 @@ if __name__ == '__main__':
     args_parser.add_argument('--data_path', default="./data/UTKFace")
     args_parser.add_argument('--save_path', default="./models/saved")
     args_parser.add_argument('--age_gender', action='store_true')
+    args_parser.add_argument('-t', '--test', type=int, default=None,
+                             help='the number of test runs that will be averaged to give the test result,'
+                                  'if None, training mode')
 
     # Hyper-parameters
     args_parser.add_argument('-lrs', nargs='+', type=float, default=[1e-2], help='learning rates')
@@ -222,9 +305,16 @@ if __name__ == '__main__':
                              help='if present it will not use residual connections')
     args_parser.add_argument('--non_max_pooling', action='store_true',
                              help='if present the model will not use max pooling (stride in convolutions instead)')
+    args_parser.add_argument('--flatten_out_layer', action='store_true',
+                             help='if present the model will use flatten before the output linear layer '
+                                  'instead of mean pooling')
 
     args_parser.add_argument('--cpu', action='store_true')
     args_parser.add_argument('-d', '--debug', action='store_true')
 
     args = args_parser.parse_args()
-    train(args)
+
+    if args.test is None:
+        train(args)
+    else:
+        test(args)

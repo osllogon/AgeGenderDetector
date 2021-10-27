@@ -14,7 +14,7 @@ class CNNClassifier(torch.nn.Module):
         """
 
         def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3,
-                     stride: int = 1, residual: bool = True):
+                     stride: int = 1, residual: bool = True, conv_layers:int = 3):
             """
             Initialization of a block that composes the classifier
             Architecture is defined here
@@ -23,11 +23,13 @@ class CNNClassifier(torch.nn.Module):
             :param kernel_size: size of the convolving kernel
             :param stride: stride of the convolution
             :param residual: true if the network should have residual connections
+            :param conv_layers: number of convolutional layers (minimum 3)
             """
             super().__init__()
             # Can use max pooling instead of stride
-            self.net = torch.nn.Sequential(
-                torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size//2),
+            num_extra_layers = max(conv_layers-3, 0)
+            conv_layers = [
+                torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2),
                                 stride=1, bias=False),
                 torch.nn.BatchNorm2d(out_channels),
                 torch.nn.ReLU(),
@@ -39,8 +41,34 @@ class CNNClassifier(torch.nn.Module):
                                 stride=1, bias=False),
                 torch.nn.BatchNorm2d(out_channels),
                 torch.nn.ReLU(),
-                # torch.nn.MaxPool2d(2, stride=2)
-            )
+            ]
+            for k in range(num_extra_layers):
+                conv_layers.extend([
+                    torch.nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2),
+                                    stride=1, bias=False),
+                    torch.nn.BatchNorm2d(out_channels),
+                    torch.nn.ReLU(),
+                ])
+            self.net = torch.nn.Sequential(*conv_layers)
+            # self.net = torch.nn.Sequential(
+            #     torch.nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size//2),
+            #                     stride=1, bias=False),
+            #     torch.nn.BatchNorm2d(out_channels),
+            #     torch.nn.ReLU(),
+            #     torch.nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2),
+            #                     stride=stride, bias=False),
+            #     torch.nn.BatchNorm2d(out_channels),
+            #     torch.nn.ReLU(),
+            #     torch.nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2),
+            #                     stride=1, bias=False),
+            #     torch.nn.BatchNorm2d(out_channels),
+            #     torch.nn.ReLU(),
+            #     torch.nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size // 2),
+            #                     stride=1, bias=False),
+            #     torch.nn.BatchNorm2d(out_channels),
+            #     torch.nn.ReLU(),
+            # )
+
             # Enable residual connections
             self.residual = residual
             if stride != 1 or in_channels != out_channels:
@@ -62,9 +90,10 @@ class CNNClassifier(torch.nn.Module):
             else:
                 return self.net(x)
 
-    def __init__(self, dim_layers:List[int] = [32, 64, 128, 256], in_channels:int=3, out_channels:int = 1,
+    def __init__(self, dim_layers: List[int] = [32, 64, 128, 256], in_channels:int=3, out_channels:int = 1,
                  input_normalization: bool = True, residual: bool = True, in_kernel_size: bool = 7,
-                 in_stride:int = 2, max_pooling:bool = True, **kwargs):
+                 in_stride: int = 2, max_pooling:bool = True, block_conv_layers:int = 3,
+                 flatten_out_layer: bool = False, **kwargs):
         """
         Initialization of the classifier
         Architecture is defined here
@@ -77,6 +106,9 @@ class CNNClassifier(torch.nn.Module):
         :param in_stride: stride of the first convolution
         :param max_pooling: true to use max pooling between blocks of convolutions,
                             false to use stride in convolutions instead
+        :param block_conv_layers: number of convolutional layers of each block (minimum 3)
+        :param flatten_out_layer: true to use flatten before output linear layer,
+                                 false to use mean pooling before output layer
         """
         # :param out_mean_pooling: true to use mean pooling for output (only for out_channels of 1)
         super().__init__()
@@ -98,7 +130,8 @@ class CNNClassifier(torch.nn.Module):
         ]
         # Add blocks of convolutions
         for l in dim_layers[1:]:
-            layers.append(self.Block(c, l, stride=1 if max_pooling else stride, residual=residual))
+            layers.append(self.Block(c, l, stride=1 if max_pooling else stride, residual=residual,
+                                     conv_layers=block_conv_layers))
             if max_pooling:
                 layers.append(torch.nn.MaxPool2d(max_pool_kernel, stride=stride))
             c = l
@@ -117,8 +150,17 @@ class CNNClassifier(torch.nn.Module):
         return self.classifier(self.net(x).mean(dim=[2, 3]))
 
 
+# class EnsemblerClassifier(torch.nn.Module):
+#     def __init__(self):
+#         pass
+#
+#     def forward(self, x:torch.Tensor):
+#         pass
+
+
 model_factory = {
     'cnn': CNNClassifier,
+    # 'ensembler': EnsemblerClassifier,
 }
 
 
