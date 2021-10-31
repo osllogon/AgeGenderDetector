@@ -1,0 +1,1 @@
+['0.01_adam_h_min_loss_64_[8, 16, 32, 64, 128]_0.1_residual=True_maxPool=True','0.01_adam_h_min_loss_64_[8, 16, 32, 64, 128]_0.1_residual=True_maxPool=True_blocksSize=4']

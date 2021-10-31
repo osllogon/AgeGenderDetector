@@ -2,6 +2,7 @@ from typing import List, Any, Dict
 
 import numpy as np
 import torch
+import torchvision
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
@@ -9,6 +10,11 @@ import pathlib
 from glob import glob
 
 LABEL_GENDER = ['hombre', 'mujer']
+IMAGE_SIZE = (200, 200)
+IMAGE_TRANSFORM = torchvision.transforms.Compose([
+    torchvision.transforms.Resize(IMAGE_SIZE),
+    torchvision.transforms.ToTensor()
+])
 
 
 class AgeGenderDataset(Dataset):
@@ -16,7 +22,7 @@ class AgeGenderDataset(Dataset):
     Class that represents a dataset to train the AgeGender classifier
     """
 
-    def __init__(self, image_names: List[str or pathlib.Path], transform=None):
+    def __init__(self, image_names: List[pathlib.Path], transform=None, only_imgs=False):
         """
         Initializer for the dataset
         :param image_names: list of images of the dataset
@@ -25,7 +31,7 @@ class AgeGenderDataset(Dataset):
         # self.dataset_path = pathlib.Path(dataset_path)
         self.transform = transform
         self.to_tensor = transforms.ToTensor()
-        # self.image_names = list(self.dataset_path.glob('*.jpg'))
+        self.only_imgs = only_imgs
         self.image_names = image_names
 
     def __len__(self):

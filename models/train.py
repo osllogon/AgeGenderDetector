@@ -1,13 +1,14 @@
 from os import path
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
+import torch
+import torch.utils.tensorboard as tb
 import torchvision.transforms
+from PIL import Image
 
 from .models import CNNClassifier, load_model, save_model
-from .utils import load_data, accuracy, save_dict, load_dict
-import torch.utils.tensorboard as tb
-import torch
+from .utils import load_data, accuracy, save_dict, load_dict, IMAGE_TRANSFORM
 
 
 def train(args):
@@ -66,7 +67,8 @@ def train(args):
         for t, transform in transforms.items():
             # load train and test data
             loader_train, loader_valid, _ = load_data(f"{args.data_path}", num_workers=num_workers,
-                                                      batch_size=batch_size, transform=transform, lengths=(0.7, 0.15, 0.15))
+                                                      batch_size=batch_size, transform=transform,
+                                                      lengths=(0.7, 0.15, 0.15))
 
             for optim in optimizers:
                 for s_mode in scheduler_modes:
@@ -184,7 +186,8 @@ def train(args):
                                     train_logger.add_scalar('lr', optimizer.param_groups[0]['lr'],
                                                             global_step=global_step)
                                     if args.age_gender:
-                                        train_logger.add_scalar('loss_gender', train_loss_gender, global_step=global_step)
+                                        train_logger.add_scalar('loss_gender', train_loss_gender,
+                                                                global_step=global_step)
                                         train_logger.add_scalar('loss_age', train_loss_age, global_step=global_step)
                                         valid_logger.add_scalar('mse', val_mse_age, global_step=global_step)
 
@@ -255,28 +258,42 @@ def test(args) -> None:
         save_dict(dict_model, f"{args.save_path}/{name}.dict")
 
 
-def predict(args, model_name: str, list_imgs: List[str], batch_size: int = 1, num_workers:int = 0, use_gpu:bool=True) -> List[Tuple]:
+def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float = 0.5,
+                       batch_size: int = 64, num_workers: int = 0, use_gpu: bool = True) -> torch.Tensor:
     """
     Makes a prediction on the input list of images using a certain model
-    :param args: ArgumentParser with args to run the training (goto main to see the options)
+    :param use_gpu: true to use the gpu
+    :param threshold: probability threshold to be considered a woman
+    :param num_workers: number of workers to use for data loading
+    :param batch_size: size of batches to use
     :param model_name: name of the file containing the model to be used
     :param list_imgs: list of paths of the images used as input of the prediction
-    :return: list of predictions over the input images
+    :return: pytorch tensor of predictions over the input images (len(list_images),2)
     """
-    # todo finish
-    import pathlib
     device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
     print(device)
 
+    # Load model
+    dict_model = load_dict(f"{model_name.replace('.th', '')}.dict")
+    model = load_model(model_name, CNNClassifier(**dict_model)).to(device)
+    model.eval()
 
+    # list(pathlib.Path(dataset_path).glob('*.jpg'))
+    predictions = []
+    for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
+        # Load image batch
+        images = list_imgs[k:k + batch_size]
+        img_tensor = []
+        for i in range(len(images)):
+            img_tensor = IMAGE_TRANSFORM(Image.open(path))
+        img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
+        # Predict
+        pred = model(img_tensor)  # result (B, 2)
+        pred[:, 0] = (torch.sigmoid(pred[:, 0]) > threshold).float()
+        predictions.append(pred.cpu().detach())
 
-
-    model_names = list(pathlib.Path(args.save_path).glob('*.th'))
-    _, _, loader_test = load_data(f"{args.data_path}", num_workers=num_workers,
-                                  batch_size=batch_size, lengths=(0.7, 0.15, 0.15))
-    model = None
-    pass
+    return torch.cat(predictions, dim=0)
 
 
 if __name__ == '__main__':
