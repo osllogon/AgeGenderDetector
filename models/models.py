@@ -74,8 +74,8 @@ class CNNClassifier(torch.nn.Module):
 
     def __init__(self, dim_layers: List[int] = [32, 64, 128, 256], in_channels: int = 3, out_channels: int = 1,
                  input_normalization: bool = True, residual: bool = True, in_kernel_size: bool = 7,
-                 in_stride: int = 2, max_pooling: bool = True, block_conv_layers: int = 3):
-        # flatten_out_layer: bool = False, **kwargs):
+                 in_stride: int = 2, max_pooling: bool = True, block_conv_layers: int = 3, **kwargs):
+        # flatten_out_layer: bool = False):
         # :param flatten_out_layer: true to use flatten before output
         # linear layer, false to use mean pooling before output layer
         # :param out_mean_pooling: true to use mean pooling for output (only for out_channels of 1)

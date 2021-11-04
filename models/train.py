@@ -180,6 +180,7 @@ def train(args):
 
                                 global_step += 1
                                 if train_logger is not None:
+                                    train_logger.add_graph(model, img)
                                     train_logger.add_scalar('loss', train_loss, global_step=global_step)
                                     train_logger.add_scalar('acc', train_acc_gender, global_step=global_step)
                                     valid_logger.add_scalar('acc', val_acc_gender, global_step=global_step)
