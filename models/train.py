@@ -42,12 +42,12 @@ def train(args):
     residual: bool = not args.non_residual
     # whether to use max pooling instead of stride in convolutions
     max_pooling: bool = not args.non_max_pooling
-    # whether to use flatten instead of mean pooling before the output linear layer
-    flatten_out_layer: bool = args.flatten_out_layer
+    # # whether to use flatten instead of mean pooling before the output linear layer
+    # flatten_out_layer: bool = args.flatten_out_layer
 
     # For age and gender model
     # weight for the age loss
-    loss_age_weights = args.loss_age_weight if args.age_gender else [0.0]
+    loss_age_weights: List[float] = args.loss_age_weight if args.age_gender else [0.0]
 
     model = None
     loss_gender = torch.nn.BCEWithLogitsLoss().to(device)  # sigmoid + BCELoss (good for 2 classes classification)
@@ -68,7 +68,7 @@ def train(args):
             # load train and test data
             loader_train, loader_valid, _ = load_data(f"{args.data_path}", num_workers=num_workers,
                                                       batch_size=batch_size, transform=transform,
-                                                      lengths=(0.7, 0.15, 0.15))
+                                                      drop_last=True, lengths=(0.7, 0.15, 0.15))
 
             for optim in optimizers:
                 for s_mode in scheduler_modes:
@@ -260,12 +260,11 @@ def test(args) -> None:
 
 
 def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float = 0.5,
-                       batch_size: int = 64, num_workers: int = 0, use_gpu: bool = True) -> torch.Tensor:
+                       batch_size: int = 64, use_gpu: bool = True) -> torch.Tensor:
     """
     Makes a prediction on the input list of images using a certain model
     :param use_gpu: true to use the gpu
     :param threshold: probability threshold to be considered a woman
-    :param num_workers: number of workers to use for data loading
     :param batch_size: size of batches to use
     :param model_name: name of the file containing the model to be used
     :param list_imgs: list of paths of the images used as input of the prediction
@@ -279,14 +278,13 @@ def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float =
     model = load_model(model_name, CNNClassifier(**dict_model)).to(device)
     model.eval()
 
-    # list(pathlib.Path(dataset_path).glob('*.jpg'))
     predictions = []
     for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
-        # Load image batch
+        # Load image batch and transform to correct size
         images = list_imgs[k:k + batch_size]
         img_tensor = []
         for i in range(len(images)):
-            img_tensor = IMAGE_TRANSFORM(Image.open(path))
+            img_tensor.append(IMAGE_TRANSFORM(Image.open(path)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict

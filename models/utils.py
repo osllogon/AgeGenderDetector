@@ -1,4 +1,4 @@
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Tuple
 
 import numpy as np
 import torch
@@ -9,7 +9,7 @@ from torchvision import transforms
 import pathlib
 from glob import glob
 
-LABEL_GENDER = ['hombre', 'mujer']
+LABEL_GENDER = ['man', 'woman']
 IMAGE_SIZE = (200, 200)
 IMAGE_TRANSFORM = torchvision.transforms.Compose([
     torchvision.transforms.Resize(IMAGE_SIZE),
@@ -22,7 +22,7 @@ class AgeGenderDataset(Dataset):
     Class that represents a dataset to train the AgeGender classifier
     """
 
-    def __init__(self, image_names: List[pathlib.Path], transform=None, only_imgs=False):
+    def __init__(self, image_names: List[pathlib.Path], transform=None):
         """
         Initializer for the dataset
         :param image_names: list of images of the dataset
@@ -31,7 +31,6 @@ class AgeGenderDataset(Dataset):
         # self.dataset_path = pathlib.Path(dataset_path)
         self.transform = transform
         self.to_tensor = transforms.ToTensor()
-        self.only_imgs = only_imgs
         self.image_names = image_names
 
     def __len__(self):
@@ -39,6 +38,17 @@ class AgeGenderDataset(Dataset):
         :return: the length of the dataset (how many images it has)
         """
         return len(self.image_names)
+
+    def get_target(self, idx) -> Tuple[float, float]:
+        """
+        Returns the target values from the dataset given the index
+        :param idx: index to retrieve
+        :return: target values retrieved (age: float, gender: float)
+        """
+        # images: edad_género_raza_datosirrelevantes.jpg.chip.jpg
+        name_split = self.image_names[idx].name.split('_')
+        # age, gender
+        return float(name_split[0]), float(name_split[1])
 
     def __getitem__(self, idx):
         """
@@ -50,14 +60,14 @@ class AgeGenderDataset(Dataset):
         # Apply transformation to image
         if self.transform is not None:
             image = self.transform(image)
-        # images: edad_género_raza_datosirrelevantes.jpg.chip.jpg
-        name_split = self.image_names[idx].name.split('_')
+
         # image, age, gender
-        return self.to_tensor(image), np.float32(name_split[0]), np.float32(name_split[1])
+        age, gender = self.get_target(idx)
+        return self.to_tensor(image), np.float32(age), np.float32(gender)
 
 
-def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
-              lengths=(0.7, 0.2, 0.1), **kwargs) -> tuple[DataLoader, ...]:
+def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
+              lengths=(0.7, 0.15, 0.15), **kwargs) -> tuple[DataLoader, ...]:
     """
     Method used to load the dataset. It retrives the data with random shuffle
     :param dataset_path: path to the dataset
@@ -66,7 +76,7 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
     :param batch_size: size of each batch which is retrieved by the dataloader
     :param drop_last: whether to drop the last batch if it is smaller than batch_size
     :param lengths: tuple with percentage of train, validation and test samples
-    :return: dataloader
+    :return: tuple of dataloader (same length as parameter lengths)
     """
 
     # Get list of images and randomly separate them
@@ -85,15 +95,20 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=True,
                             drop_last=drop_last) for k in datasets)
 
 
-def accuracy(predicted: torch.Tensor, label: torch.Tensor):
+def accuracy(predicted: torch.Tensor, label: torch.Tensor, mean: bool = True):
     """
     Calculates the accuracy of the prediction and returns a numpy number.
     It considers predicted to be class 1 if probability is higher than 0.5
+    :param mean: true to return the mean, false to return an array
     :param predicted: the input prediction
     :param label: the real label
     :return: returns the accuracy of the prediction (between 0 and 1), in the cpu and detached as numpy
     """
-    return ((predicted > 0).float() == label).float().mean().cpu().detach().numpy()
+    correct = ((predicted > 0).float() == label).float()
+    if mean:
+        return correct.mean().cpu().detach().numpy()
+    else:
+        return correct.cpu().detach().numpy()
 
 
 def save_dict(d: Dict, path: str) -> None:
@@ -115,4 +130,16 @@ def load_dict(path: str) -> Dict:
     with open(path, 'r') as file:
         from ast import literal_eval
         loaded = dict(literal_eval(file.read()))
+    return loaded
+
+
+def load_list(path: str) -> List:
+    """
+    Loads a list from a file in plain text
+    :param path: path where the list was saved
+    :return: the loaded list
+    """
+    with open(path, 'r') as file:
+        from ast import literal_eval
+        loaded = list(literal_eval(file.read()))
     return loaded
