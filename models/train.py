@@ -273,9 +273,13 @@ def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float =
     device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
     print(device)
 
+    # batch size cannot higher than length of images
+    if len(list_imgs) < batch_size:
+        batch_size = len(list_imgs)
+
     # Load model
-    dict_model = load_dict(f"{model_name.replace('.th', '')}.dict")
-    model = load_model(model_name, CNNClassifier(**dict_model)).to(device)
+    dict_model = load_dict(f"{model_name}.dict")
+    model = load_model(f"{model_name}.th", CNNClassifier(**dict_model)).to(device)
     model.eval()
 
     predictions = []
@@ -283,8 +287,8 @@ def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float =
         # Load image batch and transform to correct size
         images = list_imgs[k:k + batch_size]
         img_tensor = []
-        for i in range(len(images)):
-            img_tensor.append(IMAGE_TRANSFORM(Image.open(path)))
+        for p in images:
+            img_tensor.append(IMAGE_TRANSFORM(Image.open(p)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict
@@ -296,13 +300,17 @@ def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float =
 
 
 if __name__ == '__main__':
+    # e = predict_age_gender(list_imgs=["C:\\Users\\vibal\\Nextcloud\\Vicente\\Documentos\\Fotos\\Foto 2020.jpg"],
+    #                        model_name='./models/savedAgeGender/0.01_adam_h_min_loss_64_[8, 16, 32, 64, 128]_0.1_residual=True_maxPool=True',
+    #                        use_gpu=False)
+
     from argparse import ArgumentParser
 
     args_parser = ArgumentParser()
 
     args_parser.add_argument('--log_dir', default="./logs")
     args_parser.add_argument('--data_path', default="./data/UTKFace")
-    args_parser.add_argument('--save_path', default="./models/saved")
+    args_parser.add_argument('--save_path', default="./models/savedAgeGender")
     args_parser.add_argument('--age_gender', action='store_true')
     args_parser.add_argument('-t', '--test', type=int, default=None,
                              help='the number of test runs that will be averaged to give the test result,'
