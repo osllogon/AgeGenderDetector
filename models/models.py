@@ -2,6 +2,8 @@ from typing import List
 
 import torch
 
+from models.utils import load_dict
+
 
 class CNNClassifier(torch.nn.Module):
     """
@@ -161,6 +163,16 @@ def save_model(model: torch.nn.Module, filename: str = None) -> None:
         if isinstance(model, m):
             return save(model.state_dict(), f"{filename if filename is not None else n}.th")
     raise Exception(f"Model type {type(model)} not supported")
+
+
+def load_model_from_name(model_name):
+    """
+    Loads a model that has been previously saved using its name (model th and dict must have that same name)
+    :param model_name: name of the model to load
+    :return: the loaded model
+    """
+    dict_model = load_dict(f"{model_name}.dict")
+    return load_model(f"{model_name}.th", CNNClassifier(**dict_model))
 
 
 def load_model(model_path: str, model: torch.nn.Module) -> torch.nn.Module:

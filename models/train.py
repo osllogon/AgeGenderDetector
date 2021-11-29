@@ -7,7 +7,7 @@ import torch.utils.tensorboard as tb
 import torchvision.transforms
 from PIL import Image
 
-from .models import CNNClassifier, load_model, save_model
+from .models import CNNClassifier, load_model, save_model, load_model_from_name
 from .utils import load_data, accuracy, save_dict, load_dict, IMAGE_TRANSFORM
 
 
@@ -224,9 +224,8 @@ def test(args) -> None:
 
     for p in model_names:
         name = p.name.replace('.th', '')
-        dict_model = load_dict(f"{args.save_path}/{name}.dict")
         del model
-        model = load_model(p, CNNClassifier(**dict_model)).to(device)
+        model = load_model_from_name(f"{args.save_path}/{name}").to(device)
         loss_age = torch.nn.MSELoss().to(device)
 
         test_acc_gender = []
@@ -259,14 +258,14 @@ def test(args) -> None:
         save_dict(dict_model, f"{args.save_path}/{name}.dict")
 
 
-def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float = 0.5,
-                       batch_size: int = 64, use_gpu: bool = True) -> torch.Tensor:
+def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: float = 0.5,
+                       batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
     """
     Makes a prediction on the input list of images using a certain model
     :param use_gpu: true to use the gpu
     :param threshold: probability threshold to be considered a woman
     :param batch_size: size of batches to use
-    :param model_name: name of the file containing the model to be used
+    :param model: torch model to use
     :param list_imgs: list of paths of the images used as input of the prediction
     :return: pytorch tensor of predictions over the input images (len(list_images),2)
     """
@@ -278,8 +277,9 @@ def predict_age_gender(model_name: str, list_imgs: List[str], threshold: float =
         batch_size = len(list_imgs)
 
     # Load model
-    dict_model = load_dict(f"{model_name}.dict")
-    model = load_model(f"{model_name}.th", CNNClassifier(**dict_model)).to(device)
+    # dict_model = load_dict(f"{model_name}.dict")
+    # model = load_model(f"{model_name}.th", CNNClassifier(**dict_model)).to(device)
+    model = model.to(device)
     model.eval()
 
     predictions = []

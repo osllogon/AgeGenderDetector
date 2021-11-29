@@ -133,6 +133,12 @@ def load_dict(path: str) -> Dict:
     return loaded
 
 
+def set_seed(seed: int) -> None:
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 def load_list(path: str) -> List:
     """
     Loads a list from a file in plain text
