@@ -1,12 +1,19 @@
+import os
+import pickle
+from random import random
 from typing import List, Any, Dict, Tuple
 
 import numpy as np
 import torch
 import torchvision
 from PIL import Image
+from matplotlib import pyplot as plt
+from sklearn.metrics import matthews_corrcoef, mean_squared_error
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 import pathlib
+import pandas as pd
+import seaborn as sns
 from glob import glob
 
 LABEL_GENDER = ['man', 'woman']
@@ -67,7 +74,7 @@ class AgeGenderDataset(Dataset):
 
 
 def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
-              lengths=(0.7, 0.15, 0.15), **kwargs) -> tuple[DataLoader, ...]:
+              lengths=(0.7, 0.15, 0.15), seed=4444, **kwargs) -> tuple[DataLoader, ...]:
     """
     Method used to load the dataset. It retrives the data with random shuffle
     :param dataset_path: path to the dataset
@@ -76,12 +83,13 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
     :param batch_size: size of each batch which is retrieved by the dataloader
     :param drop_last: whether to drop the last batch if it is smaller than batch_size
     :param lengths: tuple with percentage of train, validation and test samples
+    :param seed: seed for the loaders
     :return: tuple of dataloader (same length as parameter lengths)
     """
 
     # Get list of images and randomly separate them
     image_names = list(pathlib.Path(dataset_path).glob('*.jpg'))
-    np.random.default_rng(123).shuffle(image_names)
+    np.random.default_rng(seed).shuffle(image_names)
     lengths = [int(k * len(image_names)) for k in lengths[:-1]]
     lengths = np.cumsum(lengths)
 
@@ -92,60 +100,167 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
 
     # Return DataLoaders for the datasets
     return tuple(DataLoader(k, num_workers=num_workers, batch_size=batch_size, shuffle=True,
-                            drop_last=drop_last) for k in datasets)
+                            drop_last=drop_last and idx!=len(datasets) - 1) for idx,k in enumerate(datasets))
 
 
-def accuracy(predicted: torch.Tensor, label: torch.Tensor, mean: bool = True):
+class ConfusionMatrix:
     """
-    Calculates the accuracy of the prediction and returns a numpy number.
-    It considers predicted to be class 1 if probability is higher than 0.5
-    :param mean: true to return the mean, false to return an array
-    :param predicted: the input prediction
-    :param label: the real label
-    :return: returns the accuracy of the prediction (between 0 and 1), in the cpu and detached as numpy
+    Class that represents a confusion matrix.
+
+    Cij is equal to the number of observations known to be in class i and predicted in class j
     """
-    correct = ((predicted > 0).float() == label).float()
-    if mean:
-        return correct.mean().cpu().detach().numpy()
-    else:
-        return correct.cpu().detach().numpy()
+
+    def _make(self, preds: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        Returns the confusion matrix of the given predicted and labels values
+        :param preds: predicted values (B)
+        :param labels: true values (B)
+        :return: (size,size) confusion matrix of `size` classes
+        """
+        matrix = torch.zeros(self.size, self.size, dtype=torch.float)
+        for t, p in zip(labels.reshape(-1).long(), preds.reshape(-1).long()):
+            matrix[t, p] += 1
+        return matrix
+
+    def __init__(self, size=5, name: str = ''):
+        """
+        This class builds and updates a confusion matrix.
+        :param size: the number of classes to consider
+        :param name: name of the confusion matrix
+        """
+        self.matrix = torch.zeros(size, size, dtype=torch.float)
+        self.preds = None
+        self.labels = None
+        self.name = name
+
+    def __repr__(self) -> str:
+        return self.matrix.numpy().__repr__
+
+    def add(self, preds: torch.Tensor, labels: torch.Tensor) -> None:
+        """
+        Updates the confusion matrix using predictions `preds` (e.g. logit.argmax(1)) and ground truth `labels`
+        :param preds: predicted values (B)
+        :param labels: true values (B)
+        """
+        preds = preds.reshape(-1).cpu().detach().clone()
+        labels = labels.reshape(-1).cpu().detach().clone()
+
+        self.matrix += self._make(preds, labels)
+        self.preds = torch.cat((self.preds, preds), dim=0) if self.preds is not None else preds
+        self.labels = torch.cat((self.labels, labels), dim=0) if self.labels is not None else labels
+
+    @property
+    def size(self):
+        return self.matrix.shape[0]
+
+    @property
+    def matthews_corrcoef(self):
+        """Matthews correlation coefficient (MCC)"""
+        return matthews_corrcoef(y_true=self.labels.numpy(), y_pred=self.preds.numpy())
+
+    @property
+    def rmse(self):
+        return mean_squared_error(y_true=self.labels.numpy(), y_pred=self.preds.numpy(), squared=False)
+
+    @property
+    def global_accuracy(self):
+        true_pos = self.matrix.diagonal()
+        return (true_pos.sum() / (self.matrix.sum() + 1e-5)).item()
+
+    @property
+    def class_accuracy(self):
+        true_pos = self.matrix.diagonal()
+        return true_pos / (self.matrix.sum(1) + 1e-5)
+
+    @property
+    def average_accuracy(self):
+        return self.class_accuracy.mean().item()
+
+    @property
+    def per_class(self):
+        return self.matrix / (self.matrix.sum(1, keepdims=True) + 1e-5)
+
+    @property
+    def normalize(self):
+        return self.matrix / (self.matrix.sum() + 1e-5)
+
+    def visualize(self, normalize: bool = False):
+        """
+        Visualize confusion matrix
+        :param normalize: whether to normalize the matrix by the total amount of samples
+        """
+        plt.figure(figsize=(15, 10))
+
+        matrix = self.normalize.numpy() if normalize else self.matrix.numpy()
+
+        df_cm = pd.DataFrame(matrix).astype(int)
+        heatmap = sns.heatmap(df_cm, annot=True, fmt="d")
+
+        heatmap.yaxis.set_ticklabels(heatmap.yaxis.get_ticklabels(), rotation=0, ha='right', fontsize=15)
+        heatmap.xaxis.set_ticklabels(heatmap.xaxis.get_ticklabels(), rotation=45, ha='right', fontsize=15)
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+
+        return plt
 
 
-def save_dict(d: Dict, path: str) -> None:
+def save_dict(d: Dict, path: str, as_str: bool = False) -> None:
     """
     Saves a dictionary to a file in plain text
     :param d: dictionary to save
     :param path: path of the file where the dictionary will be saved
+    :param as_str: If true, it will save as a string. If false, it will use pickle
     """
-    with open(path, 'w') as file:
-        file.write(str(d))
+    if as_str:
+        with open(path, 'w', encoding="utf-8") as file:
+            file.write(str(d))
+    else:
+        with open(path, 'wb') as file:
+            pickle.dump(d, file)
 
 
 def load_dict(path: str) -> Dict:
     """
-    Loads a dictionary from a file in plain text
+    Loads a dictionary from a file (plain text or pickle)
     :param path: path where the dictionary was saved
+
     :return: the loaded dictionary
     """
-    with open(path, 'r') as file:
+    with open(path, 'rb') as file:
+        try:
+            return pickle.load(file)
+        except pickle.UnpicklingError as e:
+            # print(e)
+            pass
+
+    with open(path, 'r', encoding="utf-8") as file:
         from ast import literal_eval
-        loaded = dict(literal_eval(file.read()))
-    return loaded
+        s = file.read()
+        return dict(literal_eval(s))
 
 
 def set_seed(seed: int) -> None:
+    """
+    This function sets a seed and ensure a deterministic behavior
+
+    :param seed: seed for the random generators
+    """
+    # todo delete all calls to set seed except this one
+    # set seed in numpy and random
     np.random.seed(seed)
+    random.seed(seed)
+
+    # set seed and deterministic algorithms for torch
     torch.manual_seed(seed)
+    torch.use_deterministic_algorithms(True)
+
+    # Ensure all operations are deterministic on GPU
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-def load_list(path: str) -> List:
-    """
-    Loads a list from a file in plain text
-    :param path: path where the list was saved
-    :return: the loaded list
-    """
-    with open(path, 'r') as file:
-        from ast import literal_eval
-        loaded = list(literal_eval(file.read()))
-    return loaded
+        torch.backends.cudnn.determinstic = True
+        torch.backends.cudnn.benchmark = False
+
+        # for deterministic behavior on cuda >= 10.2
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
