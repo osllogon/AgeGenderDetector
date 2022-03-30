@@ -40,7 +40,7 @@ Datasets data:
 Model metrics (best model selected):
 ![metrics](example_imgs/metrics.png)
 
-Prediction tool:
+Prediction tool (the age has an error margin):
 ![prediction](example_imgs/prediction.png)
 
 Saliency maps:
