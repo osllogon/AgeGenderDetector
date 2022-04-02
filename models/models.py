@@ -137,9 +137,22 @@ class CNNClassifier(torch.nn.Module):
         return self.classifier(self.net(x).mean(dim=[2, 3]))
 
 
+class CNNClassifierTransforms(CNNClassifier):
+    def __init__(self, pred_transforms, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pred_transforms = pred_transforms
+        self.to_tensor = transforms.ToTensor()
+
+    def predict(self, x):
+        if self.pred_transforms is not None:
+            x = self.pred_transforms(x)
+        x = self.to_tensor(x)
+        return self(x)
+
+
 MODEL_CLASS = {
     'cnn': CNNClassifier,
-    # 'ensembler': EnsemblerClassifier,
+    'cnn_t': CNNClassifierTransforms,
 }
 
 MODEL_CLASS_KEY = 'model_class'

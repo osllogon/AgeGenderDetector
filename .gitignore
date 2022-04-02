@@ -1,13 +1,11 @@
 # Folders
 Datos/
 data/
+data_full/
 .idea/
 temporary/
 **/tmp*/
 
-
-# Git LFS
-.gitattributes
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

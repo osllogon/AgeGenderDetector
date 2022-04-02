@@ -8,7 +8,7 @@ import torchvision.transforms
 from PIL import Image
 
 from .models import CNNClassifier, load_model, save_model, load_model_from_name
-from .utils import load_data, accuracy, save_dict, load_dict, IMAGE_TRANSFORM
+from .utils import load_data, accuracy, save_dict, load_dict, IMAGE_TRANSFORM_CROP
 
 
 def train(args):
@@ -288,7 +288,7 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: 
         images = list_imgs[k:k + batch_size]
         img_tensor = []
         for p in images:
-            img_tensor.append(IMAGE_TRANSFORM(Image.open(p)))
+            img_tensor.append(IMAGE_TRANSFORM_CROP(Image.open(p)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict

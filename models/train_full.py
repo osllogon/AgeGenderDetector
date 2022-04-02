@@ -11,14 +11,14 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tqdm.auto import trange, tqdm
 
 from .models import CNNClassifier, save_model, load_model
-from .utils import load_data, save_dict, IMAGE_TRANSFORM, ConfusionMatrix
+from .utils import load_data, save_dict, IMAGE_TRANSFORM_FULL, ConfusionMatrix
 
 
 def train(
         model: CNNClassifier,
         dict_model: Dict,
         log_dir: str = "./logs_full",
-        data_path: str = "./data/UTKFace",
+        data_path: str = "./data_full",
         save_path: str = "./models/saved_full",
         lr: float = 1e-2,
         optimizer_name: str = "adamw",
@@ -348,7 +348,7 @@ def test(
                 # train
                 for img, age, gender in loader_train:
                     img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model(img)
+                    pred = model.predict(img)
 
                     train_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
                     train_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
@@ -357,7 +357,7 @@ def test(
                 # valid
                 for img, age, gender in loader_valid:
                     img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model(img)
+                    pred = model.predict(img)
 
                     val_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
                     val_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
@@ -366,7 +366,7 @@ def test(
                 # test
                 for img, age, gender in loader_test:
                     img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model(img)
+                    pred = model.predict(img)
 
                     test_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
                     test_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
@@ -451,7 +451,7 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: 
         images = list_imgs[k:k + batch_size]
         img_tensor = []
         for p in images:
-            img_tensor.append(IMAGE_TRANSFORM(Image.open(p)))
+            img_tensor.append(IMAGE_TRANSFORM_FULL(Image.open(p)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict
@@ -485,7 +485,7 @@ if __name__ == '__main__':
             model=CNNClassifier(**d),
             dict_model=d,
             log_dir="./logs_full",
-            data_path="./data/UTKFace",
+            data_path="./data_full",
             save_path="./models/saved_full",
             lr=1e-2,
             optimizer_name="adamw",

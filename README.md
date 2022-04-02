@@ -1,10 +1,10 @@
 #  Age-Gender Detector
 
-- [Data](#data)
-- [Model](#model)
+- [Age-Gender Detector](#age-gender-detector)
+  - [Data](#data)
+  - [Model Cropped](#model-cropped)
 - [Dash images](#dash-images)
-- [Original Description](#original-description)
-  - [Información de los datos](#información-de-los-datos)
+    - [Información de los datos](#información-de-los-datos)
   
 
 ## Data
@@ -20,17 +20,17 @@ illumination, occlusion, resolution, etc.
 
 
 
-## Model
+## Model Cropped
 
 We have used Convolutional Neural Networks (CNN) to predict the age and gender of the input image.
 
 We have obtained the following metrics:
 - Validation:
-  - Gender accuracy: 0.90482956
-  - Age MSE: 78.95643
+  - Gender accuracy: 0.905
+  - Age MSE: 78.956
 - Test:
-  - Gender accuracy: 0.9149244
-  - Age MSE: 75.27963
+  - Gender accuracy: 0.915
+  - Age MSE: 75.28
 
 # Dash images
 
@@ -47,22 +47,9 @@ Saliency maps:
 ![saliency_maps](example_imgs/saliency_maps.png)
 
 
-## Original Problem Description
-
-Una empresa que se dedica a tratamiento de imágenes quiere exponer en su página web una aplicación que le permita a los usuarios a partir de una foto, detectar su género y su edad.
-Para ello han recopilado una serie de imágenes que servirán como datos de entrada.
-
-La empresa os pide:
-
-* Realizar un análisis exploratorio de los datos detallando aquellos aspectos más relevantes que hayáis encontrado.
-* Construir dos modelos: uno de regresión que prediga la edad de la persona de la foto (Podríamos cambiarlo en función a como se desarrolle el trabajo) y otro de clasificación que prediga si es hombre o mujer en la foto
-* Desarrollar un cuadro de mando con Dash que resuma los aspectos más relevantes que hayáis extraido en el análisis exploratorio, muestre el proceso de modelado de los datos y permita evaluar fotos nuevas.
-
-¿Qué tareas de mantenimiento o evolución de la aplicación son necesarias para que se mejore la aplicación realizada?
-
 ### Información de los datos
 
-Los datos son fotos por lo tanto no hay variables explícitamente. Tenéis que saber que si una foto se llama de la siguiente forma __34_0_0_20170117120149082.jpg.chip.jpg__
-significa que la edad del individuo es 34 y que su género es hombre. Es decir, los nombres de las fotos siguen el siguiente esquema __edad_género_raza_datosirrelevantes.jpg.chip.jpg__.
+You need to know that if a photo is called __34_0_0_201701171712010149082.jpg.chip.jpg__, it means that the age of the individual is 34 and his gender is male. 
+That is, the photo names follow the following scheme __age_gender_race_relevant_data.jpg.chip.jpg__.
 
-Siendo el género 0 para hombre y 1 para mujer.
+Gender being 0 for male and 1 for female.

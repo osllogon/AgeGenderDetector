@@ -17,9 +17,9 @@ import seaborn as sns
 from glob import glob
 
 LABEL_GENDER = ['man', 'woman']
-IMAGE_SIZE = (200, 200)
-IMAGE_TRANSFORM = torchvision.transforms.Compose([
-    torchvision.transforms.Resize(IMAGE_SIZE),
+IMAGE_SIZE_CROP = (200, 200)
+IMAGE_TRANSFORM_CROP = torchvision.transforms.Compose([
+    torchvision.transforms.Resize(IMAGE_SIZE_CROP),
     torchvision.transforms.ToTensor()
 ])
 
@@ -282,3 +282,15 @@ def load_pickle(path:str):
     """
     with open(path, 'rb') as f:
         return pickle.load(f)
+
+
+if __name__ == '__main__':
+    data = load_data(
+        dataset_path='./data_full',
+        num_workers=0,
+        batch_size=1,
+        drop_last=False,
+        random_seed=4444,
+    )
+    l = [k[0].shape for k in data[0]]
+    print('Done')
