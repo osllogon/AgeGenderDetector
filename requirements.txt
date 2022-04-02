@@ -7,3 +7,6 @@ plotly
 pandas
 matplotlib
 dash
+tqdm
+scikit-learn
+seaborn

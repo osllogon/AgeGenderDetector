@@ -1,3 +1,14 @@
+# Folders
+Datos/
+data/
+.idea/
+temporary/
+**/tmp*/
+
+
+# Git LFS
+.gitattributes
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -127,12 +138,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-
-# Folders
-Datos/
-data/
-.idea/
-temporary/
-
-# Git LFS
-.gitattributes

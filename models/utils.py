@@ -74,7 +74,7 @@ class AgeGenderDataset(Dataset):
 
 
 def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
-              lengths=(0.7, 0.15, 0.15), seed=4444, **kwargs) -> tuple[DataLoader, ...]:
+              lengths=(0.7, 0.15, 0.15), random_seed=4444, **kwargs) -> tuple[DataLoader, ...]:
     """
     Method used to load the dataset. It retrives the data with random shuffle
     :param dataset_path: path to the dataset
@@ -89,7 +89,7 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
 
     # Get list of images and randomly separate them
     image_names = list(pathlib.Path(dataset_path).glob('*.jpg'))
-    np.random.default_rng(seed).shuffle(image_names)
+    np.random.default_rng(random_seed).shuffle(image_names)
     lengths = [int(k * len(image_names)) for k in lengths[:-1]]
     lengths = np.cumsum(lengths)
 
@@ -264,3 +264,21 @@ def set_seed(seed: int) -> None:
         # for deterministic behavior on cuda >= 10.2
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
+
+def save_pickle(obj, save_path:str):
+    """
+    Saves an object with pickle
+    :param obj: object to be saved
+    :param save_path: path to the file where it will be saved
+    """
+    with open(save_path, 'wb') as f:
+        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def load_pickle(path:str):
+    """
+    Loads an object with pickle from a file
+    :param path: path to the file where the object is stored
+    """
+    with open(path, 'rb') as f:
+        return pickle.load(f)
