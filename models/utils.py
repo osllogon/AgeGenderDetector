@@ -29,16 +29,18 @@ class AgeGenderDataset(Dataset):
     Class that represents a dataset to train the AgeGender classifier
     """
 
-    def __init__(self, image_names: List[pathlib.Path], transform=None):
+    def __init__(self, image_names: List[pathlib.Path], transform=None, raw:bool = False):
         """
         Initializer for the dataset
         :param image_names: list of images of the dataset
         :param transform: transformations to be applied to the data when retrieved
+        :param raw: whether to give the images in a non-tensor format
         """
         # self.dataset_path = pathlib.Path(dataset_path)
         self.transform = transform
         self.to_tensor = transforms.ToTensor()
         self.image_names = image_names
+        self.raw = raw
 
     def __len__(self):
         """
@@ -65,16 +67,18 @@ class AgeGenderDataset(Dataset):
         """
         image = Image.open(self.image_names[idx])
         # Apply transformation to image
-        if self.transform is not None:
-            image = self.transform(image)
+        if not self.raw:
+            if self.transform is not None:
+                image = self.transform(image)
+            image = self.to_tensor(image)
 
         # image, age, gender
         age, gender = self.get_target(idx)
-        return self.to_tensor(image), np.float32(age), np.float32(gender)
+        return image, np.float32(age), np.float32(gender)
 
 
 def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
-              lengths=(0.7, 0.15, 0.15), random_seed=4444, **kwargs) -> tuple[DataLoader, ...]:
+              lengths=(0.7, 0.15, 0.15), random_seed=4444, raw_val:bool = False, **kwargs) -> tuple[DataLoader, ...]:
     """
     Method used to load the dataset. It retrives the data with random shuffle
     :param dataset_path: path to the dataset
@@ -84,6 +88,7 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
     :param drop_last: whether to drop the last batch if it is smaller than batch_size
     :param lengths: tuple with percentage of train, validation and test samples
     :param seed: seed for the loaders
+    :param raw_pred: whether to give validation data in a non-tensor format
     :return: tuple of dataloader (same length as parameter lengths)
     """
 
@@ -95,8 +100,8 @@ def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
 
     # Create datasets
     datasets = [AgeGenderDataset(image_names[:lengths[0]], **kwargs)]
-    datasets.extend([AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]]) for k in range(len(lengths) - 1)])
-    datasets.append(AgeGenderDataset(image_names[lengths[-1]:]))
+    datasets.extend([AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]], raw=raw_val) for k in range(len(lengths) - 1)])
+    datasets.append(AgeGenderDataset(image_names[lengths[-1]:], raw=raw_val))
 
     # Return DataLoaders for the datasets
     return tuple(DataLoader(k, num_workers=num_workers, batch_size=batch_size, shuffle=True,

@@ -1,17 +1,17 @@
 import itertools
 from os import path
-from typing import List, Dict
+from typing import List, Dict, Union, Tuple
 
 import numpy as np
 import torch
 import torch.utils.tensorboard as tb
-import torchvision.transforms
 from PIL import Image
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tqdm.auto import trange, tqdm
+import torchvision.transforms as transforms
 
 from .models import CNNClassifier, save_model, load_model
-from .utils import load_data, save_dict, IMAGE_TRANSFORM_FULL, ConfusionMatrix
+from .utils import load_data, save_dict, ConfusionMatrix
 
 
 def train(
@@ -30,7 +30,6 @@ def train(
         device=None,
         steps_save: int = 1,
         use_cpu: bool = False,
-        transforms: List = [torchvision.transforms.RandomHorizontalFlip()],
         loss_age_weight: float = 1e-2,
 ):
     """
@@ -113,7 +112,7 @@ def train(
         batch_size=batch_size,
         drop_last=False,
         random_seed=4444,
-        transform=transforms,
+        raw_val=True,
     )
 
     if optimizer_name == "sgd":
@@ -150,7 +149,7 @@ def train(
             img, age, gender = img.to(device), age.to(device), gender.to(device)
 
             # Compute loss and update parameters
-            pred = model(img)
+            pred = model.run(img)
             loss_val_gender = loss_gender(pred[:, 0], gender)
             loss_val_age = loss_age(pred[:, 1], age)
             loss_val = loss_val_gender + loss_age_weight * loss_val_age
@@ -174,7 +173,7 @@ def train(
             for img, age, gender in loader_valid:
                 # To device
                 img, age, gender = img.to(device), age.to(device), gender.to(device)
-                pred = model(img)
+                pred = model.run(img)
 
                 val_cm.add((pred[:, 0] > 0).float(), gender)
                 val_mse_age.append(loss_age(pred[:, 1], age).cpu().detach().numpy())
@@ -273,7 +272,7 @@ def test(
         use_cpu: bool = False,
         save: bool = True,
         verbose: bool = False,
-) -> None:
+) -> List[Dict]:
     """
     Calculates the metric on the test set of the model given in args.
     Prints the result and saves it in the dictionary files.
@@ -320,7 +319,7 @@ def test(
             batch_size=batch_size,
             drop_last=False,
             random_seed=4444,
-            transform=transforms,
+            raw_val=True,
         )
 
         # start testing
@@ -348,7 +347,7 @@ def test(
                 # train
                 for img, age, gender in loader_train:
                     img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.predict(img)
+                    pred = model.run(img)
 
                     train_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
                     train_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
@@ -357,7 +356,7 @@ def test(
                 # valid
                 for img, age, gender in loader_valid:
                     img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.predict(img)
+                    pred = model.run(img)
 
                     val_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
                     val_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
@@ -366,7 +365,7 @@ def test(
                 # test
                 for img, age, gender in loader_test:
                     img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.predict(img)
+                    pred = model.run(img)
 
                     test_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
                     test_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
@@ -423,43 +422,43 @@ def test(
     return list_all
 
 
-def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: float = 0.5,
-                       batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
-    """
-    Makes a prediction on the input list of images using a certain model
-    :param use_gpu: true to use the gpu
-    :param threshold: probability threshold to be considered a woman
-    :param batch_size: size of batches to use
-    :param model: torch model to use
-    :param list_imgs: list of paths of the images used as input of the prediction
-    :return: pytorch tensor of predictions over the input images (len(list_images),2)
-    """
-    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
-    print(device)
-
-    # batch size cannot higher than length of images
-    if len(list_imgs) < batch_size:
-        batch_size = len(list_imgs)
-
-    # Load model
-    model = model.to(device)
-    model.eval()
-
-    predictions = []
-    for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
-        # Load image batch and transform to correct size
-        images = list_imgs[k:k + batch_size]
-        img_tensor = []
-        for p in images:
-            img_tensor.append(IMAGE_TRANSFORM_FULL(Image.open(p)))
-        img_tensor = torch.stack(img_tensor, dim=0).to(device)
-
-        # Predict
-        pred = model(img_tensor)  # result (B, 2)
-        pred[:, 0] = (torch.sigmoid(pred[:, 0]) > threshold).float()
-        predictions.append(pred.cpu().detach())
-
-    return torch.cat(predictions, dim=0)
+# def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: float = 0.5,
+#                        batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
+#     """
+#     Makes a prediction on the input list of images using a certain model
+#     :param use_gpu: true to use the gpu
+#     :param threshold: probability threshold to be considered a woman
+#     :param batch_size: size of batches to use
+#     :param model: torch model to use
+#     :param list_imgs: list of paths of the images used as input of the prediction
+#     :return: pytorch tensor of predictions over the input images (len(list_images),2)
+#     """
+#     device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
+#     print(device)
+#
+#     # batch size cannot higher than length of images
+#     if len(list_imgs) < batch_size:
+#         batch_size = len(list_imgs)
+#
+#     # Load model
+#     model = model.to(device)
+#     model.eval()
+#
+#     predictions = []
+#     for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
+#         # Load image batch and transform to correct size
+#         images = list_imgs[k:k + batch_size]
+#         img_tensor = []
+#         for p in images:
+#             img_tensor.append(IMAGE_TRANSFORM_FULL(Image.open(p)))
+#         img_tensor = torch.stack(img_tensor, dim=0).to(device)
+#
+#         # Predict
+#         pred = model(img_tensor)  # result (B, 2)
+#         pred[:, 0] = (torch.sigmoid(pred[:, 0]) > threshold).float()
+#         predictions.append(pred.cpu().detach())
+#
+#     return torch.cat(predictions, dim=0)
 
 
 if __name__ == '__main__':
@@ -471,8 +470,22 @@ if __name__ == '__main__':
         block_conv_layers=[3],
         residual=[True],
         max_pooling=[True, False],
-        # training param
-        transforms=[torchvision.transforms.RandomHorizontalFlip()]
+        transforms=[
+            (
+                transforms.Compose([
+                    transforms.RandomResizedCrop(size=(600, 600)),
+                    transforms.RandomHorizontalFlip(),
+                ]),
+                transforms.RandomResizedCrop(size=(600, 600)),
+            ),
+            (
+                transforms.Compose([
+                    transforms.Resize(size=(600, 600)),
+                    transforms.RandomHorizontalFlip(),
+                ]),
+                transforms.Resize(size=(600, 600)),
+            )
+        ]
     )
 
     list_model = [dict(zip(dict_model.keys(), k)) for k in itertools.product(*dict_model.values())]
@@ -482,7 +495,7 @@ if __name__ == '__main__':
         transforms = d.pop('transforms')
 
         train(
-            model=CNNClassifier(**d),
+            model=CNNClassifier(train_transforms=transforms[0], pred_transforms=transforms[1], **d),
             dict_model=d,
             log_dir="./logs_full",
             data_path="./data_full",
@@ -497,7 +510,6 @@ if __name__ == '__main__':
             device=None,
             steps_save=1,
             use_cpu=False,
-            transforms=transforms,
             loss_age_weight=1e-2,
         )
 

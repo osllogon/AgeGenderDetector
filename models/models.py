@@ -2,8 +2,9 @@ import pathlib
 from typing import List, Dict, Optional, Tuple
 
 import torch
+from torchvision import transforms
 
-from models.utils import load_dict
+from models.utils import load_dict, save_dict
 
 
 class CNNClassifier(torch.nn.Module):
@@ -138,13 +139,22 @@ class CNNClassifier(torch.nn.Module):
 
 
 class CNNClassifierTransforms(CNNClassifier):
-    def __init__(self, pred_transforms, *args, **kwargs):
+    def __init__(self, train_transforms=None, pred_transforms=None, *args, **kwargs):
+        """
+        :param train_transforms:
+        :param pred_transforms:
+        :param args:
+        :param kwargs:
+        """
         super().__init__(*args, **kwargs)
-        self.pred_transforms = pred_transforms
+        self.pred_train = train_transforms if train_transforms is not None else lambda x: x
+        self.pred_transforms = pred_transforms if pred_transforms is not None else lambda x: x
         self.to_tensor = transforms.ToTensor()
 
-    def predict(self, x):
-        if self.pred_transforms is not None:
+    def run(self, x):
+        if self.training:
+            x = self.train_transforms(x)
+        else:
             x = self.pred_transforms(x)
         x = self.to_tensor(x)
         return self(x)
