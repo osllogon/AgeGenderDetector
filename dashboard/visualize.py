@@ -102,18 +102,18 @@ def visualize_datasets_gender(datasets) -> go.Figure:
     return fig_bar
 
 
-def visualize_data_images(datasets):
-    # Show multiple random photos
-    number_images = 4
-    fig = go.Figure()
-    for k in range(number_images):
-        # pytorch tensor to numpy
+# def visualize_data_images(datasets):
+#     # Show multiple random photos
+#     number_images = 4
+#     fig = go.Figure()
+#     for k in range(number_images):
+#         # pytorch tensor to numpy
 
-        fig.add_trace(
-            go.Image(
-                # z=
-            )
-        )
+#         fig.add_trace(
+#             go.Image(
+#                 # z=
+#             )
+#         )
 
 
 def visualize_model(model: torch.nn.Module, data_path, num_workers: int = 0, batch_size: int = 64,

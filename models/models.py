@@ -138,31 +138,31 @@ class CNNClassifier(torch.nn.Module):
         return self.classifier(self.net(x).mean(dim=[2, 3]))
 
 
-class CNNClassifierTransforms(CNNClassifier):
-    def __init__(self, train_transforms=None, pred_transforms=None, *args, **kwargs):
-        """
-        :param train_transforms:
-        :param pred_transforms:
-        :param args:
-        :param kwargs:
-        """
-        super().__init__(*args, **kwargs)
-        self.pred_train = train_transforms if train_transforms is not None else lambda x: x
-        self.pred_transforms = pred_transforms if pred_transforms is not None else lambda x: x
-        self.to_tensor = transforms.ToTensor()
-
-    def run(self, x):
-        if self.training:
-            x = self.train_transforms(x)
-        else:
-            x = self.pred_transforms(x)
-        x = self.to_tensor(x)
-        return self(x)
+# class CNNClassifierTransforms(CNNClassifier):
+#     def __init__(self, train_transforms=None, pred_transforms=None, *args, **kwargs):
+#         """
+#         :param train_transforms:
+#         :param pred_transforms:
+#         :param args:
+#         :param kwargs:
+#         """
+#         super().__init__(*args, **kwargs)
+#         self.pred_train = train_transforms if train_transforms is not None else lambda x: x
+#         self.pred_transforms = pred_transforms if pred_transforms is not None else lambda x: x
+#         self.to_tensor = transforms.ToTensor()
+#
+#     def run(self, x):
+#         if self.training:
+#             x = self.train_transforms(x)
+#         else:
+#             x = self.pred_transforms(x)
+#         x = self.to_tensor(x)
+#         return self(x)
 
 
 MODEL_CLASS = {
     'cnn': CNNClassifier,
-    'cnn_t': CNNClassifierTransforms,
+    # 'cnn_t': CNNClassifierTransforms,
 }
 
 MODEL_CLASS_KEY = 'model_class'

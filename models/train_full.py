@@ -31,10 +31,19 @@ def train(
         steps_save: int = 1,
         use_cpu: bool = False,
         loss_age_weight: float = 1e-2,
+        scheduler_patience:int = 10,
+        train_transforms=None,
+        test_transforms=None,
+        suffix:str = '',
+        use_cache:bool=False,
 ):
     """
     Method that trains a given model
 
+    :param use_cache: whether to save the data after the first epoch to speed up training/testing
+    :param suffix: suffix to add to the name of the model
+    :param test_transforms: transformation to be applied to test data
+    :param train_transforms: transformation to be applied to training data
     :param model: model that will be trained
     :param dict_model: dictionary of model parameters
     :param log_dir: directory where the tensorboard log should be saved
@@ -52,6 +61,7 @@ def train(
     :param steps_save: number of epoch after which to validate and save model (if conditions met)
     :param transforms: transformations to apply to the training data for data augmentation
     :param loss_age_weight: weight for the age loss
+    :param scheduler_patience: value used as patience for the learning rate scheduler
     """
 
     # cpu or gpu used for training if available (gpu much faster)
@@ -73,6 +83,7 @@ def train(
         'scheduler_mode',
         'transforms',
         'loss_age_weight',
+        'suffix',
     ]}
     # dictionary to set model name
     name_dict = dict_model.copy()
@@ -112,7 +123,9 @@ def train(
         batch_size=batch_size,
         drop_last=False,
         random_seed=4444,
-        raw_val=True,
+        train_transforms=train_transforms,
+        test_transforms=test_transforms,
+        use_cache=use_cache,
     )
 
     if optimizer_name == "sgd":
@@ -124,11 +137,10 @@ def train(
     else:
         raise Exception("Optimizer not configured")
 
-    # :param scheduler_patience: value used as patience for the learning rate scheduler
     if scheduler_mode in ["min_loss", 'min_mse']:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=scheduler_patience)
     elif scheduler_mode in ["max_acc", "max_val_acc", "max_val_mcc"]:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=scheduler_patience)
     else:
         raise Exception("Optimizer not configured")
 
@@ -149,7 +161,7 @@ def train(
             img, age, gender = img.to(device), age.to(device), gender.to(device)
 
             # Compute loss and update parameters
-            pred = model.run(img)
+            pred = model(img)
             loss_val_gender = loss_gender(pred[:, 0], gender)
             loss_val_age = loss_age(pred[:, 1], age)
             loss_val = loss_val_gender + loss_age_weight * loss_val_age
@@ -173,7 +185,7 @@ def train(
             for img, age, gender in loader_valid:
                 # To device
                 img, age, gender = img.to(device), age.to(device), gender.to(device)
-                pred = model.run(img)
+                pred = model(img)
 
                 val_cm.add((pred[:, 0] > 0).float(), gender)
                 val_mse_age.append(loss_age(pred[:, 1], age).cpu().detach().numpy())
@@ -272,6 +284,8 @@ def test(
         use_cpu: bool = False,
         save: bool = True,
         verbose: bool = False,
+        transforms=None,
+        use_cache:bool=False,
 ) -> List[Dict]:
     """
     Calculates the metric on the test set of the model given in args.
@@ -286,6 +300,8 @@ def test(
     :param debug_mode: whether to use debug mode (cpu and 0 workers)
     :param save: whether to save the results in the model dict
     :param verbose: whether to print results
+    :param transforms: transformation to be applied to data
+    :param use_cache: whether to save the data after the first epoch to speed up training/testing
     """
 
     def print_v(s):
@@ -319,7 +335,9 @@ def test(
             batch_size=batch_size,
             drop_last=False,
             random_seed=4444,
-            raw_val=True,
+            train_transforms=transforms,
+            test_transforms=transforms,
+            use_cache=use_cache,
         )
 
         # start testing
@@ -346,29 +364,29 @@ def test(
             with torch.no_grad():
                 # train
                 for img, age, gender in loader_train:
-                    img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.run(img)
+                    img, age, gender = img.to(device), age, gender
+                    pred = model(img).cpu().detach()
 
-                    train_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
-                    train_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
+                    train_run_mse.append(mean_squared_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
+                    train_run_mae.append(mean_absolute_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
                     train_run_cm.add(preds=(pred[:, 0] > 0).float(), labels=gender)
 
                 # valid
                 for img, age, gender in loader_valid:
-                    img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.run(img)
+                    img, age, gender = img.to(device), age, gender
+                    pred = model(img).cpu().detach()
 
-                    val_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
-                    val_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
+                    val_run_mse.append(mean_squared_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
+                    val_run_mae.append(mean_absolute_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
                     val_run_cm.add(preds=(pred[:, 0] > 0).float(), labels=gender)
 
                 # test
                 for img, age, gender in loader_test:
-                    img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.run(img)
+                    img, age, gender = img.to(device), age, gender
+                    pred = model(img).cpu().detach()
 
-                    test_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
-                    test_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
+                    test_run_mse.append(mean_squared_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
+                    test_run_mae.append(mean_absolute_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
                     test_run_cm.add(preds=(pred[:, 0] > 0).float(), labels=gender)
 
             print_v(f"Run {k}: {test_run_cm.global_accuracy}")
@@ -472,18 +490,22 @@ if __name__ == '__main__':
         max_pooling=[True, False],
         transforms=[
             (
+                '0',
                 transforms.Compose([
-                    transforms.RandomResizedCrop(size=(600, 600)),
+                    transforms.RandomResizedCrop(size=(400, 400)),
                     transforms.RandomHorizontalFlip(),
                 ]),
-                transforms.RandomResizedCrop(size=(600, 600)),
+                transforms.RandomResizedCrop(size=(400, 400)),
+                True,
             ),
             (
+                '1',
                 transforms.Compose([
-                    transforms.Resize(size=(600, 600)),
+                    transforms.Resize(size=(400, 400)),
                     transforms.RandomHorizontalFlip(),
                 ]),
-                transforms.Resize(size=(600, 600)),
+                transforms.Resize(size=(400, 400)),
+                True,
             )
         ]
     )
@@ -495,7 +517,7 @@ if __name__ == '__main__':
         transforms = d.pop('transforms')
 
         train(
-            model=CNNClassifier(train_transforms=transforms[0], pred_transforms=transforms[1], **d),
+            model=CNNClassifier(**d),
             dict_model=d,
             log_dir="./logs_full",
             data_path="./data_full",
@@ -503,7 +525,7 @@ if __name__ == '__main__':
             lr=1e-2,
             optimizer_name="adamw",
             n_epochs=65,
-            batch_size=64,
+            batch_size=16,
             num_workers=2,
             scheduler_mode='min_mse',
             debug_mode=False,
@@ -511,6 +533,10 @@ if __name__ == '__main__':
             steps_save=1,
             use_cpu=False,
             loss_age_weight=1e-2,
+            train_transforms=transforms[1],
+            test_transforms=transforms[2],
+            suffix=transforms[0],
+            use_cache=transforms[3]
         )
 
 #     from argparse import ArgumentParser

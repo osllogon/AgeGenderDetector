@@ -1,6 +1,7 @@
 import os
 import pickle
-from random import random
+import random
+import warnings
 from typing import List, Any, Dict, Tuple
 
 import numpy as np
@@ -11,6 +12,7 @@ from matplotlib import pyplot as plt
 from sklearn.metrics import matthews_corrcoef, mean_squared_error
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
+from pathlib import Path
 import pathlib
 import pandas as pd
 import seaborn as sns
@@ -29,18 +31,28 @@ class AgeGenderDataset(Dataset):
     Class that represents a dataset to train the AgeGender classifier
     """
 
-    def __init__(self, image_names: List[pathlib.Path], transform=None, raw:bool = False):
+    def __init__(self, image_names: List[pathlib.Path], transform=None, use_cache: bool = False):
         """
         Initializer for the dataset
         :param image_names: list of images of the dataset
         :param transform: transformations to be applied to the data when retrieved
-        :param raw: whether to give the images in a non-tensor format
+        :param use_cache: whether to save the training data after the first epoch to speed up training
         """
         # self.dataset_path = pathlib.Path(dataset_path)
         self.transform = transform
         self.to_tensor = transforms.ToTensor()
         self.image_names = image_names
-        self.raw = raw
+        self.use_cache = use_cache
+        self.cache_folder = Path('./cache')
+        self.cache_folder.mkdir(exist_ok=True)
+
+        # make sure that the data is correct
+        image_tmp = image_names.copy()
+        for k in range(len(self)):
+            age, gender = self.get_target(k)
+            if age < 0 or (gender !=0 and gender!=1):
+                image_tmp.remove(self.image_names[k])
+        self.image_names = image_tmp
 
     def __len__(self):
         """
@@ -65,47 +77,67 @@ class AgeGenderDataset(Dataset):
         :param idx: index to retrieve
         :return: item retrieved (image: torch.Tensor, age: float, gender: float)
         """
-        image = Image.open(self.image_names[idx])
-        # Apply transformation to image
-        if not self.raw:
+        path = self.cache_folder.joinpath(f"{self.image_names[idx].name}.th")
+        if self.use_cache and path.exists():
+            image = load_pickle(path)
+        else:
+            image = Image.open(self.image_names[idx]).convert('RGB')
+            # Apply transformation to image
+            image = self.to_tensor(image)
             if self.transform is not None:
                 image = self.transform(image)
-            image = self.to_tensor(image)
+            
+            if self.use_cache:
+                save_pickle(image, path)
 
         # image, age, gender
         age, gender = self.get_target(idx)
         return image, np.float32(age), np.float32(gender)
 
+# todo add option to train cache
 
-def load_data(dataset_path, num_workers=0, batch_size=32, drop_last=False,
-              lengths=(0.7, 0.15, 0.15), random_seed=4444, raw_val:bool = False, **kwargs) -> tuple[DataLoader, ...]:
+def load_data(
+        dataset_path,
+        num_workers=0,
+        batch_size=32,
+        drop_last=False,
+        train_val_test_split=(0.7, 0.15, 0.15),
+        random_seed=4444,
+        train_transforms=None,
+        test_transforms=None,
+        **kwargs,
+) -> tuple[DataLoader, ...]:
     """
     Method used to load the dataset. It retrives the data with random shuffle
+
+    :param test_transforms: transformation to be applied to test data
+    :param train_transforms: transformation to be applied to training data
     :param dataset_path: path to the dataset
     :param num_workers: how many subprocesses to use for data loading.
                         0 means that the data will be loaded in the main process
     :param batch_size: size of each batch which is retrieved by the dataloader
     :param drop_last: whether to drop the last batch if it is smaller than batch_size
-    :param lengths: tuple with percentage of train, validation and test samples
-    :param seed: seed for the loaders
-    :param raw_pred: whether to give validation data in a non-tensor format
+    :param train_val_test_split: tuple with percentage of train, validation and test samples
+    :param random_seed: seed for the loaders
+
     :return: tuple of dataloader (same length as parameter lengths)
     """
 
     # Get list of images and randomly separate them
     image_names = list(pathlib.Path(dataset_path).glob('*.jpg'))
     np.random.default_rng(random_seed).shuffle(image_names)
-    lengths = [int(k * len(image_names)) for k in lengths[:-1]]
+    lengths = [int(k * len(image_names)) for k in train_val_test_split[:-1]]
     lengths = np.cumsum(lengths)
 
     # Create datasets
-    datasets = [AgeGenderDataset(image_names[:lengths[0]], **kwargs)]
-    datasets.extend([AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]], raw=raw_val) for k in range(len(lengths) - 1)])
-    datasets.append(AgeGenderDataset(image_names[lengths[-1]:], raw=raw_val))
+    datasets = [AgeGenderDataset(image_names[:lengths[0]], transform=train_transforms, **kwargs)]
+    datasets.extend(
+        [AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]], transform=test_transforms, **kwargs) for k in range(len(lengths) - 1)])
+    datasets.append(AgeGenderDataset(image_names[lengths[-1]:], transform=test_transforms, **kwargs))
 
     # Return DataLoaders for the datasets
     return tuple(DataLoader(k, num_workers=num_workers, batch_size=batch_size, shuffle=True,
-                            drop_last=drop_last and idx!=len(datasets) - 1) for idx,k in enumerate(datasets))
+                            drop_last=drop_last and idx != len(datasets) - 1) for idx, k in enumerate(datasets))
 
 
 class ConfusionMatrix:
@@ -250,7 +282,6 @@ def set_seed(seed: int) -> None:
 
     :param seed: seed for the random generators
     """
-    # todo delete all calls to set seed except this one
     # set seed in numpy and random
     np.random.seed(seed)
     random.seed(seed)
@@ -270,7 +301,7 @@ def set_seed(seed: int) -> None:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 
-def save_pickle(obj, save_path:str):
+def save_pickle(obj, save_path: str):
     """
     Saves an object with pickle
     :param obj: object to be saved
@@ -280,7 +311,7 @@ def save_pickle(obj, save_path:str):
         pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_pickle(path:str):
+def load_pickle(path: str):
     """
     Loads an object with pickle from a file
     :param path: path to the file where the object is stored
