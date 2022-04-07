@@ -1,1 +1,0 @@
-{'in_channels': 3, 'out_channels': 2, 'dim_layers': [8, 16, 32, 64, 128], 'residual': True, 'max_pooling': True, 'acc_gender': 0.90482956, 'mse_age': 78.95643, 'epoch': 299, 'test_acc_gender': 0.9149244, 'test_mse_age': 75.27963, 'name': '0.01_adam_h_min_loss_64_[8, 16, 32, 64, 128]_0.1_residual=True_maxPool=True'}

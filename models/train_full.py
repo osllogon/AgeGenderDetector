@@ -11,7 +11,7 @@ from tqdm.auto import trange, tqdm
 import torchvision.transforms as transforms
 
 from .models import CNNClassifier, save_model, load_model
-from .utils import load_data, save_dict, ConfusionMatrix
+from .utils import IMAGE_TRANSFORM, load_data, save_dict, ConfusionMatrix
 
 
 def train(
@@ -318,8 +318,6 @@ def test(
 
     # get model names from folder
     model = None
-    # best_dict = None
-    # best_acc = 0.0
     list_all = []
     paths = list(Path(save_path).glob('*'))
     for folder_path in tqdm(paths):
@@ -432,51 +430,52 @@ def test(
             test_cm=test_cm,
         ))
 
-        # # save if best
-        # if best_acc < (test_acc := dict_model['test_acc']):
-        #     best_acc = test_acc
-        #     best_dict = dict_model
-
     return list_all
 
 
-# def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: float = 0.5,
-#                        batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
-#     """
-#     Makes a prediction on the input list of images using a certain model
-#     :param use_gpu: true to use the gpu
-#     :param threshold: probability threshold to be considered a woman
-#     :param batch_size: size of batches to use
-#     :param model: torch model to use
-#     :param list_imgs: list of paths of the images used as input of the prediction
-#     :return: pytorch tensor of predictions over the input images (len(list_images),2)
-#     """
-#     device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
-#     print(device)
-#
-#     # batch size cannot higher than length of images
-#     if len(list_imgs) < batch_size:
-#         batch_size = len(list_imgs)
-#
-#     # Load model
-#     model = model.to(device)
-#     model.eval()
-#
-#     predictions = []
-#     for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
-#         # Load image batch and transform to correct size
-#         images = list_imgs[k:k + batch_size]
-#         img_tensor = []
-#         for p in images:
-#             img_tensor.append(IMAGE_TRANSFORM_FULL(Image.open(p)))
-#         img_tensor = torch.stack(img_tensor, dim=0).to(device)
-#
-#         # Predict
-#         pred = model(img_tensor)  # result (B, 2)
-#         pred[:, 0] = (torch.sigmoid(pred[:, 0]) > threshold).float()
-#         predictions.append(pred.cpu().detach())
-#
-#     return torch.cat(predictions, dim=0)
+def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: bool = True,
+                       batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
+    """
+    Makes a prediction on the input list of images using a certain model
+    :param use_gpu: true to use the gpu
+    :param return_pr: if True, it will return the probabilities of the predictions
+                        if False, it will return the predicted labels
+    :param batch_size: size of batches to use
+    :param model: torch model to use
+    :param list_imgs: list of paths of the images used as input of the prediction
+    :return: pytorch tensor of predictions over the input images (len(list_images),2)
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
+    print(device)
+
+    threshold = 0.5
+
+    # batch size cannot higher than length of images
+    if len(list_imgs) < batch_size:
+        batch_size = len(list_imgs)
+
+    # Load model
+    model = model.to(device)
+    model.eval()
+
+    predictions = []
+    for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
+        # Load image batch and transform to correct size
+        images = list_imgs[k:k + batch_size]
+        img_tensor = []
+        for p in images:
+            img_tensor.append(IMAGE_TRANSFORM(Image.open(p)))
+        img_tensor = torch.stack(img_tensor, dim=0).to(device)
+
+        # Predict
+        pred = model(img_tensor)  # result (B, 2)
+        # return gender probabilities or predicted label
+        pred[:, 0] = torch.sigmoid(pred[:, 0])
+        if not return_pr:
+            pred[:, 0] = (pred[:, 0] > threshold).float()
+        predictions.append(pred.cpu().detach())
+
+    return torch.cat(predictions, dim=0)
 
 
 if __name__ == '__main__':
@@ -489,15 +488,6 @@ if __name__ == '__main__':
         residual=[True],
         max_pooling=[True, False],
         transforms=[
-            (
-                '0',
-                transforms.Compose([
-                    transforms.RandomResizedCrop(size=(400, 400)),
-                    transforms.RandomHorizontalFlip(),
-                ]),
-                transforms.RandomResizedCrop(size=(400, 400)),
-                True,
-            ),
             (
                 '1',
                 transforms.Compose([

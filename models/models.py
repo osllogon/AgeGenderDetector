@@ -138,31 +138,8 @@ class CNNClassifier(torch.nn.Module):
         return self.classifier(self.net(x).mean(dim=[2, 3]))
 
 
-# class CNNClassifierTransforms(CNNClassifier):
-#     def __init__(self, train_transforms=None, pred_transforms=None, *args, **kwargs):
-#         """
-#         :param train_transforms:
-#         :param pred_transforms:
-#         :param args:
-#         :param kwargs:
-#         """
-#         super().__init__(*args, **kwargs)
-#         self.pred_train = train_transforms if train_transforms is not None else lambda x: x
-#         self.pred_transforms = pred_transforms if pred_transforms is not None else lambda x: x
-#         self.to_tensor = transforms.ToTensor()
-#
-#     def run(self, x):
-#         if self.training:
-#             x = self.train_transforms(x)
-#         else:
-#             x = self.pred_transforms(x)
-#         x = self.to_tensor(x)
-#         return self(x)
-
-
 MODEL_CLASS = {
     'cnn': CNNClassifier,
-    # 'cnn_t': CNNClassifierTransforms,
 }
 
 MODEL_CLASS_KEY = 'model_class'
@@ -216,7 +193,6 @@ def load_model(folder_path: pathlib.Path, model_class: Optional[str] = None) -> 
     :param model_class: one of the model classes in `MODEL_CLASS` dict. If none, it is obtained from the dictionary
     :return: the loaded model and the dictionary of parameters
     """
-    # todo so it does not need to have the same name
     path = f"{folder_path.absolute()}/{folder_path.name}"
     # use pickle instead
     dict_model = load_dict(f"{path}.dict.pickle")
