@@ -445,9 +445,9 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: 
     :param list_imgs: list of paths of the images used as input of the prediction
     :return: pytorch tensor of predictions over the input images (len(list_images),2)
     """
-    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
-    print(device)
+    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')\
 
+    # define threshold for prediction
     threshold = 0.5
 
     # batch size cannot higher than length of images

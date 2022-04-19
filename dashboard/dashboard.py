@@ -12,7 +12,7 @@ from PIL import Image
 import pathlib
 import base64
 
-# visualiation imports
+# visualization imports
 import dash
 from dash import dcc
 from dash import html
@@ -22,15 +22,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # own imports
-from models.train import predict_age_gender
-from models.models import CNNClassifier, load_model_from_name
-from models.utils import load_list, load_dict, LABEL_GENDER
-from .visualize import visualize_datasets_age, visualize_datasets_gender, \
-    get_datasets, visualize_model, OriginalSaliencyMap, HeatMap, SaliencyMapCombined, IntegratedSaliencyMap
+from models.train_full import predict_age_gender
+from models.models import CNNClassifier, load_model
+from models.utils import load_dict, LABEL_GENDER
+from .visualize import SaliencyMap, HeatMap, SaliencyMapCombined, AverageSaliencyMap
 
 # Variables globales
-MODELS_PATH = 'models/savedAgeGender'
-DATA_PATH = "./data/UTKFace"
+MODELS_PATH = 'models/saved_full'
 # if true, heat maps will be showed
 SHOW_HEAT_MAPS = False
 # if true, only the prediction to the uploaded image will be showed (this overwrites SHOW_HEAT_MAPS)
@@ -50,56 +48,8 @@ TITLE_STYLE = {
     "margin": "30px"
 }
 
-# Get figures
-datasets = get_datasets(DATA_PATH)
-figures_dist_age = visualize_datasets_age(datasets)
-figures_dist_gender = visualize_datasets_gender(datasets)
-
-best_models = load_list(f'{MODELS_PATH}/bestModels.txt')
-options_models = {
-    k.name[:-3]: {'label': f'Best: {k.name[:-3]}' if k.name[:-3] in best_models else k.name[:-3], 'value': k.name[:-3]}
-    for k in list(pathlib.Path().glob(f'{MODELS_PATH}/*.th'))}
-
-# Tabs content
-tab_exploratory = html.Div(
-    id="content-exploratory",
-    style={"display": 'None'},
-    children=[
-        # Explanatory info
-        html.H2(
-            children=["Explanatory information"],
-            id="title_explanatory",
-            style=TITLE_STYLE
-        ),
-        html.Div(
-            children=[
-                dcc.Graph(
-                    figure=figures_dist_age[0],
-                    id="figures_dist_age_bar",
-                    style={
-                        "display": "inline-block",
-                        "width": '50%'
-                    }
-                ),
-                dcc.Graph(
-                    figure=figures_dist_age[1],
-                    id="figures_dist_age_box",
-                    style={
-                        "display": "inline-block",
-                        "width": '50%'
-                    }
-                ),
-                dcc.Graph(
-                    figure=figures_dist_gender,
-                    id="figures_dist_gender",
-                    style={
-                        "display": "block",
-                    }
-                )
-            ]
-        )
-    ]
-)
+# best_models = load_list(f'{MODELS_PATH}/bestModels.txt')
+options_models = {k: {'label': k, 'value': k} for k in os.listdir(MODELS_PATH)}
 
 tab_result = html.Div(
     id="content-result",
@@ -122,30 +72,6 @@ tab_result = html.Div(
                         "margin-left": "15%",
                         "width": "70%"
                     }
-                ),
-                dcc.Loading(
-                    id="loading_model",
-                    type="default",
-                    children=[
-                        dcc.Graph(
-                            id="figure_datasets_metrics",
-                            style={
-                                "display": "block",
-                            }
-                        ),
-                        dcc.Graph(
-                            id="figure_age_error_metrics",
-                            style={
-                                "display": "block",
-                            }
-                        ),
-                        dcc.Graph(
-                            id="figure_age_error_metrics_line",
-                            style={
-                                "display": "block",
-                            }
-                        )
-                    ]
                 )
             ]
         ),
@@ -180,8 +106,7 @@ tab_result = html.Div(
         dcc.Upload(
             id='upload-image',
             children=html.Div([
-                'Drag and Drop or ',
-                html.A('Select Files')
+                'Drag and Drop or Select Files'
             ]),
             style={
                 'width': '50%',
@@ -354,12 +279,12 @@ tab_result = html.Div(
                         )
                     ]
                 ),
-                # integrated saliency maps images
+                # average saliency maps images
                 html.Div(
                     children=[
                         dbc.Card(
                             [
-                                dbc.CardHeader("Integrated Saliency Maps",
+                                dbc.CardHeader("Average Saliency Maps",
                                                style={'text-align': 'center'}),
                                 dbc.CardBody(
                                     [
@@ -372,7 +297,7 @@ tab_result = html.Div(
                                                         dbc.CardBody(
                                                             [
                                                                 dcc.Graph(
-                                                                    id="integrated_saliency_map_age"
+                                                                    id="average_saliency_map_age"
                                                                 ),
                                                             ]
                                                         ),
@@ -391,7 +316,7 @@ tab_result = html.Div(
                                                         dbc.CardBody(
                                                             [
                                                                 dcc.Graph(
-                                                                    id="integrated_saliency_map_gender"
+                                                                    id="average_saliency_map_gender"
                                                                 )
                                                             ]
                                                         ),
@@ -567,13 +492,11 @@ app.layout = html.Div(
                 # tabs
                 dcc.Tabs(
                     id="tabs",
-                    value="tab-exploratory",
+                    value="tab-results",
                     children=[
-                        dcc.Tab(label="Exploratory", value="tab-exploratory"),
                         dcc.Tab(label="Results", value="tab-results")
                     ]
                 ),
-                tab_exploratory,
                 tab_result
             ]
         )
@@ -583,46 +506,16 @@ app.layout = html.Div(
 
 # Tabs control
 @app.callback(
-    Output("content-exploratory", "style"),
     Output("content-result", "style"),
     Input('tabs', 'value')
 )
 def render_content(tab):
     if tab == 'tab-exploratory':
-        return {"display": 'block'}, {"display": 'none'}
+        return {"display": 'none'}
     elif tab == 'tab-results':
-        return {"display": 'none'}, {"display": 'block'}
+        return {"display": 'block'}
     else:
-        return {"display": 'none'}, {"display": 'none'}
-
-
-# Dropdown model
-@app.callback(
-    Output("figure_datasets_metrics", "figure"),
-    Output("figure_age_error_metrics", "figure"),
-    Output("figure_age_error_metrics_line", "figure"),
-    Output("figure_datasets_metrics", "style"),
-    Output("figure_age_error_metrics", "style"),
-    Output("figure_age_error_metrics_line", "style"),
-    Input("dropdown_model", "value")
-)
-def dropdown_model(model_name):
-    if model_name is None:
-        return go.Figure(), go.Figure(), go.Figure(), {"display": 'block'}, {"display": 'none'}, {"display": 'none'}
-
-    if model_name != curr_model.get("name", ""):
-        curr_model["name"] = model_name
-        curr_model["model"] = load_model_from_name(f"{MODELS_PATH}/{model_name}").to(device)
-    model = curr_model["model"]
-
-    return *visualize_model(
-        # f"{MODELS_PATH}/{model}",
-        model,
-        DATA_PATH,
-        num_workers=0,
-        batch_size=32,
-        use_gpu=USE_GPU
-    ), {"display": 'block'}, {"display": 'block'}, {"display": 'block'}
+        return {"display": 'none'}
 
 
 # Predict footer
@@ -651,8 +544,8 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
 @app.callback(Output('figure_original_image', 'figure'),
               Output('saliency_map_age', 'figure'),
               Output('saliency_map_gender', 'figure'),
-              Output('integrated_saliency_map_age', 'figure'),
-              Output('integrated_saliency_map_gender', 'figure'),
+              Output('average_saliency_map_age', 'figure'),
+              Output('average_saliency_map_gender', 'figure'),
               Output('saliency_map_combined_age', 'figure'),
               Output('saliency_map_combined_gender', 'figure'),
               Output('heat_map_age', 'figure'),
@@ -682,60 +575,72 @@ def update_prediction(image, model_name):
     with open(temp_img, 'wb') as fp:
         fp.write(base64.decodebytes(data))
 
+    # preprocess image for visualizations
     transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor()
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Resize(size=(400, 400)),
     ])
-
     image = Image.open(temp_img)
     image = transforms(image)
+    image = image.to(device)
+
+    # create original image visualization
     original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
-    original_fig = px.imshow(original_image.detach().numpy())
+    original_fig = px.imshow(original_image.detach().cpu().numpy())
     original_fig.update_layout(coloraxis_showscale=False)
     original_fig.update_xaxes(showticklabels=False)
     original_fig.update_yaxes(showticklabels=False)
 
     if model_name is not None:
+        # update current model
         if model_name != curr_model.get("name", ""):
             curr_model["name"] = model_name
-            curr_model["model"] = load_model_from_name(f"{MODELS_PATH}/{model_name}").to(device)
+            curr_model["model"] = load_model(pathlib.Path(f"{MODELS_PATH}/{model_name}"))[0].to(device)
         model = curr_model["model"]
 
+        # make predictions
         predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
-        gender = int(predictions[0][0].item())
+        gender = round(predictions[0][0].item())
+        confidence = predictions[0][0].item()*100 if gender == 1 else (100 - predictions[0][0].item()*100)
         age = predictions[0][1].item()
 
-        image = image.to(device)
-
-        dict_model = load_dict(f"{MODELS_PATH}/{model_name}.dict")
+        # load model
+        dict_model = load_dict(f"{MODELS_PATH}/{model_name}/{model_name}.dict")
         model = CNNClassifier(**dict_model).to(device)
-        model.load_state_dict(torch.load(f"{MODELS_PATH}/{model_name}.th"))
+        model.load_state_dict(torch.load(f"{MODELS_PATH}/{model_name}/{model_name}.th"))
 
-        original_saliency_map = OriginalSaliencyMap(model)
+        # compute original saliency maps
+        original_saliency_map = SaliencyMap(model)
         saliency_map_gender, saliency_map_age = original_saliency_map.visualize(image.unsqueeze(0),
                                                                                 gender, age, use_gpu=USE_GPU)
-        integrated_saliency_map = IntegratedSaliencyMap(model)
-        integrated_saliency_map_gender, integrated_saliency_map_age = integrated_saliency_map.visualize(
+
+        # compute average saliency maps
+        average_saliency_map = AverageSaliencyMap(model)
+        average_saliency_map_gender, average_saliency_map_age = average_saliency_map.visualize(
             image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
 
+        # compute combined saliency maps
         saliency_map_combined = SaliencyMapCombined(model)
         saliency_map_combined_gender, saliency_map_combined_age = saliency_map_combined.visualize(image.unsqueeze(0),
                                                                                                   gender, age,
                                                                                                   use_gpu=USE_GPU)
 
         if NO_MAPS:
-            return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), LABEL_GENDER[gender]
+            return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), \
+                   f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
 
         if SHOW_HEAT_MAPS:
+            # compute heat maps visualizations
             heat_map = HeatMap(model)
             heat_map_gender, heat_map_age = heat_map.visualize(image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
 
-            return original_fig, saliency_map_age, saliency_map_gender, integrated_saliency_map_age, \
-                   integrated_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
-                   heat_map_age, heat_map_gender, str(int(age)), LABEL_GENDER[gender]
+            return original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+                   average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
+                   heat_map_age, heat_map_gender, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
         else:
-            return original_fig, saliency_map_age, saliency_map_gender, integrated_saliency_map_age, \
-                   integrated_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
-                   zero_fig, zero_fig, str(int(age)), LABEL_GENDER[gender]
+            return original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+                   average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
+                   zero_fig, zero_fig, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
     else:
         return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, "", ""
 
