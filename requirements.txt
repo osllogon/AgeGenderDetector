@@ -1,7 +1,9 @@
 Pillow
 numpy
 tensorboard
+-f https://download.pytorch.org/whl/cu113
 torch
+-f https://download.pytorch.org/whl/cu113
 torchvision
 plotly
 pandas

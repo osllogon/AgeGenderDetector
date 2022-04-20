@@ -1,9 +1,7 @@
 # machine learning imports
 import os
-import tempfile
 
 import numpy as np
-import pandas as pd
 import torch
 import torchvision
 from PIL import Image
@@ -17,29 +15,28 @@ import dash
 from dash import dcc
 from dash import html
 import dash_bootstrap_components as dbc
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import plotly.express as px
-import plotly.graph_objects as go
 
 # own imports
 from models.train_full import predict_age_gender
 from models.models import CNNClassifier, load_model
 from models.utils import load_dict, LABEL_GENDER
-from .visualize import SaliencyMap, HeatMap, SaliencyMapCombined, AverageSaliencyMap
+from .visualize import SaliencyMap, HeatMap, GradCAM, SaliencyMapCombined, AverageSaliencyMap
 
-# Variables globales
+# global variables
 MODELS_PATH = 'models/saved_full'
 # if true, heat maps will be showed
-SHOW_HEAT_MAPS = False
+SHOW_HEAT_MAPS = True
 # if true, only the prediction to the uploaded image will be showed (this overwrites SHOW_HEAT_MAPS)
 NO_MAPS = False
 # if true it will try to use the GPU (faster)
-USE_GPU = False
+USE_GPU = True
 device = torch.device('cuda' if torch.cuda.is_available() and USE_GPU else 'cpu')
 
 curr_model = {}
 
-# Inicializamos la aplicacion de dash
+# initialize dash app
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 TITLE_STYLE = {
@@ -105,9 +102,10 @@ tab_result = html.Div(
         ),
         dcc.Upload(
             id='upload-image',
-            children=html.Div([
-                'Drag and Drop or Select Files'
-            ]),
+            # children=html.Div([
+            #     'Drag and Drop or Select Files'
+            # ]),
+            children='Drag and Drop or Select File',
             style={
                 'width': '50%',
                 'height': '60px',
@@ -147,12 +145,6 @@ tab_result = html.Div(
                             },
                         )
                     ]
-                ),
-                # Prediction results
-                html.H2(
-                    children=["Results"],
-                    id="results_title",
-                    style=TITLE_STYLE
                 ),
                 html.Div(
                     children=[
@@ -213,9 +205,9 @@ tab_result = html.Div(
                         "margin-top": "2%"
                     }
                 ),
-                # saliency maps images
+                # XAI
                 html.H2(
-                    children=["Maps"],
+                    children=["XAI"],
                     id="maps_title",
                     style=TITLE_STYLE
                 ),
@@ -494,7 +486,7 @@ app.layout = html.Div(
                     id="tabs",
                     value="tab-results",
                     children=[
-                        dcc.Tab(label="Results", value="tab-results")
+                        dcc.Tab(label="", value="tab-results")
                     ]
                 ),
                 tab_result
@@ -531,6 +523,7 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
     if age_prediction != '' and gender_prediction != '' and age is not None and gender is not None:
         age_prediction = int(age_prediction)
         age = int(age)
+        gender_prediction = gender_prediction.split('(')[0].strip()
         age_result = 'correct' if np.abs(age - age_prediction) <= 10 else 'incorrect'
         gender_result = 'correct' if gender_prediction == gender else 'incorrect'
         age_color = 'success' if np.abs(age - age_prediction) <= 10 else 'danger'
@@ -541,7 +534,8 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
 
 
 # Update Maps
-@app.callback(Output('figure_original_image', 'figure'),
+@app.callback(Output('upload-image', 'children'),
+              Output('figure_original_image', 'figure'),
               Output('saliency_map_age', 'figure'),
               Output('saliency_map_gender', 'figure'),
               Output('average_saliency_map_age', 'figure'),
@@ -555,6 +549,10 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
               Input('upload-image', 'contents'),
               Input("dropdown_model", "value"))
 def update_prediction(image, model_name):
+    # set normal response for upload image
+    normal_response = 'Drag and Drop or Select File'
+
+    # create zero figure
     zero_array = np.zeros((200, 200, 3))
     zero_array[:, :] = 255
     zero_fig = px.imshow(zero_array)
@@ -562,12 +560,18 @@ def update_prediction(image, model_name):
     zero_fig.update_xaxes(showticklabels=False)
     zero_fig.update_yaxes(showticklabels=False)
 
+    # check if image is not None
     if image is None:
-        return zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, "", ""
+        return normal_response, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+               zero_fig, "", ""
 
+    # check if the image is in correct format
+    if image.split(';')[0].split('/')[-1] != 'jpeg':
+        return 'File must be a JPG image', zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+               zero_fig, zero_fig, "", ""
+
+    # save image in temporary directory
     data = image.encode("utf8").split(b";base64,")[1]
-    # temp_dir = tempfile.TemporaryDirectory()
-    # temp_img = f'{temp_dir.name}/image.jpg'
     temp_dir = "temporary"
     temp_img = f'{temp_dir}/image.jpg'
     if not os.path.exists(temp_dir):
@@ -601,7 +605,7 @@ def update_prediction(image, model_name):
         # make predictions
         predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
         gender = round(predictions[0][0].item())
-        confidence = predictions[0][0].item()*100 if gender == 1 else (100 - predictions[0][0].item()*100)
+        confidence = predictions[0][0].item() * 100 if gender == 1 else (100 - predictions[0][0].item() * 100)
         age = predictions[0][1].item()
 
         # load model
@@ -626,23 +630,24 @@ def update_prediction(image, model_name):
                                                                                                   use_gpu=USE_GPU)
 
         if NO_MAPS:
-            return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), \
+            return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), \
                    f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
 
         if SHOW_HEAT_MAPS:
             # compute heat maps visualizations
-            heat_map = HeatMap(model)
+            heat_map = GradCAM(model)
             heat_map_gender, heat_map_age = heat_map.visualize(image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
 
-            return original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+            return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
                    average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
                    heat_map_age, heat_map_gender, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
         else:
-            return original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+            return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
                    average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
                    zero_fig, zero_fig, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
     else:
-        return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, "", ""
+        return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+               zero_fig, "", ""
 
 
 if __name__ == '__main__':
