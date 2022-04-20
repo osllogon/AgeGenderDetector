@@ -19,7 +19,7 @@ import seaborn as sns
 from glob import glob
 
 LABEL_GENDER = ['man', 'woman']
-IMAGE_SIZE = (400, 400)
+IMAGE_SIZE = (200, 200)
 IMAGE_TRANSFORM = torchvision.transforms.Compose([
     torchvision.transforms.Resize(IMAGE_SIZE),
     torchvision.transforms.ToTensor()

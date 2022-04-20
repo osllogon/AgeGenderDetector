@@ -160,7 +160,6 @@ class ResNetClassifier(torch.nn.Module):
         self.net = torch.hub.load('pytorch/vision:v0.10.0', resnet_arch, pretrained=True)
         self.net.avgpool = torch.nn.Identity()
         self.net.fc = torch.nn.Identity()
-        self.pooling = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
         # specific classifier
         self.classifier = torch.nn.Linear(512, out_channels)
 
@@ -174,10 +173,10 @@ class ResNetClassifier(torch.nn.Module):
         x = self.net(x)
         
         # unflatten
-        d = np.sqrt(x.shape[1] / 512)
-        x = x.reshape(-1, d, d, 512)
+        d = int(np.sqrt(x.shape[1] / 512).item())
+        x = x.reshape(-1, 512, d, d)
 
-        x = self.pooling(x)
+        x = x.mean(dim=[2, 3])
         return self.classifier(x)
 
 

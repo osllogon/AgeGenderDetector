@@ -1,12 +1,11 @@
 # Folders
-Datos/
 data/
 data_full/
 .idea/
 temporary/
 **/tmp*/
 notebooks/models/
-cache/
+**/cache/
 
 
 # Byte-compiled / optimized / DLL files
