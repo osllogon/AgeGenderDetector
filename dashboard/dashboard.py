@@ -22,7 +22,7 @@ import plotly.express as px
 from models.train_full import predict_age_gender
 from models.models import CNNClassifier, load_model
 from models.utils import load_dict, LABEL_GENDER
-from .visualize import SaliencyMap, HeatMap, GradCAM, SaliencyMapCombined, AverageSaliencyMap
+from .visualize import SaliencyMap, GradCAM, SaliencyMapCombined, AverageSaliencyMap
 
 # global variables
 MODELS_PATH = 'models/saved_full'
@@ -31,7 +31,7 @@ SHOW_HEAT_MAPS = True
 # if true, only the prediction to the uploaded image will be showed (this overwrites SHOW_HEAT_MAPS)
 NO_MAPS = False
 # if true it will try to use the GPU (faster)
-USE_GPU = True
+USE_GPU = False
 device = torch.device('cuda' if torch.cuda.is_available() and USE_GPU else 'cpu')
 
 curr_model = {}
@@ -510,7 +510,7 @@ def render_content(tab):
         return {"display": 'none'}
 
 
-# Predict footer
+# predict footer
 @app.callback(Output('age_footer', 'children'),
               Output('gender_footer', 'children'),
               Output('age_complete_card', 'color'),
@@ -533,7 +533,7 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
         return '', '', 'primary', 'primary'
 
 
-# Update Maps
+# update Maps
 @app.callback(Output('upload-image', 'children'),
               Output('figure_original_image', 'figure'),
               Output('saliency_map_age', 'figure'),
@@ -549,9 +549,6 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
               Input('upload-image', 'contents'),
               Input("dropdown_model", "value"))
 def update_prediction(image, model_name):
-    # set normal response for upload image
-    normal_response = 'Drag and Drop or Select File'
-
     # create zero figure
     zero_array = np.zeros((200, 200, 3))
     zero_array[:, :] = 255
@@ -560,94 +557,100 @@ def update_prediction(image, model_name):
     zero_fig.update_xaxes(showticklabels=False)
     zero_fig.update_yaxes(showticklabels=False)
 
-    # check if image is not None
-    if image is None:
-        return normal_response, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
-               zero_fig, "", ""
+    try:
+        # set normal response for upload image
+        normal_response = 'Drag and Drop or Select File'
 
-    # check if the image is in correct format
-    if image.split(';')[0].split('/')[-1] != 'jpeg':
-        return 'File must be a JPG image', zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
-               zero_fig, zero_fig, "", ""
+        # check if image is not None
+        if image is None:
+            return normal_response, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+                   zero_fig, "", ""
 
-    # save image in temporary directory
-    data = image.encode("utf8").split(b";base64,")[1]
-    temp_dir = "temporary"
-    temp_img = f'{temp_dir}/image.jpg'
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
-    with open(temp_img, 'wb') as fp:
-        fp.write(base64.decodebytes(data))
+        # check if the image is in correct format
+        if image.split(';')[0].split('/')[-1] != 'jpeg':
+            return 'File must be a JPG image', zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+                   zero_fig, zero_fig, "", ""
 
-    # preprocess image for visualizations
-    transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Resize(size=(400, 400)),
-    ])
-    image = Image.open(temp_img)
-    image = transforms(image)
-    image = image.to(device)
+        # save image in temporary directory
+        data = image.encode("utf8").split(b";base64,")[1]
+        temp_dir = "temporary"
+        temp_img = f'{temp_dir}/image.jpg'
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+        with open(temp_img, 'wb') as fp:
+            fp.write(base64.decodebytes(data))
 
-    # create original image visualization
-    original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
-    original_fig = px.imshow(original_image.detach().cpu().numpy())
-    original_fig.update_layout(coloraxis_showscale=False)
-    original_fig.update_xaxes(showticklabels=False)
-    original_fig.update_yaxes(showticklabels=False)
+        # preprocess image for visualizations
+        transforms = torchvision.transforms.Compose([
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Resize(size=(400, 400)),
+        ])
+        image = Image.open(temp_img)
+        image = transforms(image)
+        image = image.to(device)
 
-    if model_name is not None:
-        # update current model
-        if model_name != curr_model.get("name", ""):
-            curr_model["name"] = model_name
-            curr_model["model"] = load_model(pathlib.Path(f"{MODELS_PATH}/{model_name}"))[0].to(device)
-        model = curr_model["model"]
+        # create original image visualization
+        original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
+        original_fig = px.imshow(original_image.detach().cpu().numpy())
+        original_fig.update_layout(coloraxis_showscale=False)
+        original_fig.update_xaxes(showticklabels=False)
+        original_fig.update_yaxes(showticklabels=False)
 
-        # make predictions
-        predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
-        gender = round(predictions[0][0].item())
-        confidence = predictions[0][0].item() * 100 if gender == 1 else (100 - predictions[0][0].item() * 100)
-        age = predictions[0][1].item()
+        if model_name is not None:
+            # update current model
+            if model_name != curr_model.get("name", ""):
+                curr_model["name"] = model_name
+                curr_model["model"] = load_model(pathlib.Path(f"{MODELS_PATH}/{model_name}"))[0].to(device)
+            model = curr_model["model"]
 
-        # load model
-        dict_model = load_dict(f"{MODELS_PATH}/{model_name}/{model_name}.dict")
-        model = CNNClassifier(**dict_model).to(device)
-        model.load_state_dict(torch.load(f"{MODELS_PATH}/{model_name}/{model_name}.th"))
+            # make predictions
+            predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
+            gender = round(predictions[0][0].item())
+            confidence = predictions[0][0].item() * 100 if gender == 1 else (100 - predictions[0][0].item() * 100)
+            age = predictions[0][1].item()
 
-        # compute original saliency maps
-        original_saliency_map = SaliencyMap(model)
-        saliency_map_gender, saliency_map_age = original_saliency_map.visualize(image.unsqueeze(0),
-                                                                                gender, age, use_gpu=USE_GPU)
+            # load model
+            dict_model = load_dict(f"{MODELS_PATH}/{model_name}/{model_name}.dict")
+            model = CNNClassifier(**dict_model).to(device)
+            model.load_state_dict(torch.load(f"{MODELS_PATH}/{model_name}/{model_name}.th"))
 
-        # compute average saliency maps
-        average_saliency_map = AverageSaliencyMap(model)
-        average_saliency_map_gender, average_saliency_map_age = average_saliency_map.visualize(
-            image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
+            # compute original saliency maps
+            original_saliency_map = SaliencyMap(model)
+            saliency_map_gender, saliency_map_age = original_saliency_map.visualize(image.unsqueeze(0), use_gpu=USE_GPU)
 
-        # compute combined saliency maps
-        saliency_map_combined = SaliencyMapCombined(model)
-        saliency_map_combined_gender, saliency_map_combined_age = saliency_map_combined.visualize(image.unsqueeze(0),
-                                                                                                  gender, age,
-                                                                                                  use_gpu=USE_GPU)
+            # compute average saliency maps
+            average_saliency_map = AverageSaliencyMap(model)
+            average_saliency_map_gender, average_saliency_map_age = average_saliency_map.visualize(
+                image.unsqueeze(0), use_gpu=USE_GPU)
 
-        if NO_MAPS:
-            return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), \
-                   f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
+            # compute combined saliency maps
+            saliency_map_combined = SaliencyMapCombined(model)
+            saliency_map_combined_gender, saliency_map_combined_age = \
+                saliency_map_combined.visualize(image.unsqueeze(0), use_gpu=USE_GPU)
 
-        if SHOW_HEAT_MAPS:
-            # compute heat maps visualizations
-            heat_map = GradCAM(model)
-            heat_map_gender, heat_map_age = heat_map.visualize(image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
+            if NO_MAPS:
+                return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), \
+                       f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
 
-            return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
-                   average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
-                   heat_map_age, heat_map_gender, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
+            if SHOW_HEAT_MAPS:
+                # compute heat maps visualizations
+                heat_map = GradCAM(model)
+                heat_map_gender, heat_map_age = heat_map.visualize(image.unsqueeze(0), use_gpu=USE_GPU)
+
+                return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+                       average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
+                       heat_map_age, heat_map_gender, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
+            else:
+                return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+                       average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
+                       zero_fig, zero_fig, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
         else:
-            return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
-                   average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
-                   zero_fig, zero_fig, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
-    else:
-        return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
-               zero_fig, "", ""
+            return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+                   zero_fig, zero_fig, "", ""
+
+    except:
+        return 'There has been an error, please try again', zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+               zero_fig, zero_fig, zero_fig, zero_fig, "", ""
 
 
 if __name__ == '__main__':

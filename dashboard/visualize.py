@@ -1,13 +1,22 @@
 from abc import ABC, abstractmethod
 import plotly
 import plotly.express as px
+from plotly.graph_objs import Figure
 import torch
+import torch.nn.functional as F
 
 
 class Visualization(ABC):
+    """
+    Abstract class (Interface for all visualizations classes)
+
+    Methods
+    -------
+    visualize -> tuple[Figure, Figure]
+    """
+
     @abstractmethod
-    def visualize(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool = True) -> \
-            tuple[plotly.graph_objs.Figure, plotly.graph_objs.Figure]:
+    def visualize(self, image: torch.Tensor, use_gpu: bool = True) -> tuple[Figure, Figure]:
         pass
 
 
@@ -40,7 +49,7 @@ class HeatMap(Visualization):
         self.scale_factor = scale_factor
 
     @torch.no_grad()
-    def compute_heat_maps(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool =True) \
+    def compute_heat_maps(self, image: torch.Tensor, use_gpu: bool =True) \
             -> tuple[torch.Tensor, torch.Tensor]:
         """
         It creates a heat map from an image by occlusion technique
@@ -91,8 +100,7 @@ class HeatMap(Visualization):
         return 1 - (losses_gender / average_tensor_gender), 1 - (losses_age / average_tensor_age)
 
     # Overriding abstract method
-    def visualize(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool = True) -> \
-            tuple[plotly.graph_objs.Figure, plotly.graph_objs.Figure]:
+    def visualize(self, image: torch.Tensor, use_gpu: bool = True) -> tuple[Figure, Figure]:
         """
         This methods calls compute_heat_map for creating the heat map and then it creates the visualization and saves it
 
@@ -112,7 +120,7 @@ class HeatMap(Visualization):
 
         """
 
-        heat_maps = self.compute_heat_maps(image, gender, age, use_gpu)
+        heat_maps = self.compute_heat_maps(image, use_gpu)
 
         gender_fig = px.imshow(heat_maps[0][0, 0].cpu().detach().numpy())
         gender_fig.update_layout(coloraxis_showscale=False)
@@ -149,7 +157,7 @@ class GradCAM(Visualization):
         self.threshold = threshold
 
     @torch.no_grad()
-    def compute_grad_cams(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool) -> \
+    def compute_grad_cams(self, image: torch.Tensor, use_gpu: bool) -> \
             tuple[torch.Tensor, torch.Tensor]:
 
         # define device
@@ -170,13 +178,13 @@ class GradCAM(Visualization):
             output = self.model.classifier(activations.mean(dim=[2, 3]))
             output[0, 0].backward()
 
-        weights = activations.grad.sum(dim=[2, 3], keepdims=True)
+        weights = activations.grad.mean(dim=[2, 3], keepdims=True)
         gender_cam = (activations*weights).sum(dim=1)
+        gender_cam = F.relu(gender_cam)
 
         # create and normalize gender saliency map
         gender_cam = (gender_cam - gender_cam.min()) / (gender_cam.max() - gender_cam.min())
-        gender_cam = torch.nn.functional.interpolate(gender_cam.unsqueeze(1), size=(image.size(2), image.size(3)),
-                                                     mode='bilinear')
+        gender_cam = F.interpolate(gender_cam.unsqueeze(1), size=(image.size(2), image.size(3)), mode='bilinear')
 
         # zero gradients
         self.model.zero_grad()
@@ -187,19 +195,18 @@ class GradCAM(Visualization):
             output = self.model.classifier(activations.mean(dim=[2, 3]))
             output[0, 1].backward()
 
-        weights = activations.grad.sum(dim=[2, 3], keepdims=True)
+        weights = activations.grad.mean(dim=[2, 3], keepdims=True)
         age_cam = (activations * weights).sum(dim=1)
+        age_cam = F.relu(age_cam)
 
         # create and normalize gender saliency map
         age_cam = (age_cam - age_cam.min()) / (age_cam.max() - age_cam.min())
-        age_cam = torch.nn.functional.interpolate(age_cam.unsqueeze(1), size=(image.size(2), image.size(3)),
-                                                  mode='bilinear')
+        age_cam = F.interpolate(age_cam.unsqueeze(1), size=(image.size(2), image.size(3)), mode='bilinear')
 
         return gender_cam[0, 0], age_cam[0, 0]
 
     # overriding abstract method
-    def visualize(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool = True) -> \
-            tuple[plotly.graph_objs.Figure, plotly.graph_objs.Figure]:
+    def visualize(self, image: torch.Tensor, use_gpu: bool = True) -> tuple[Figure, Figure]:
         """
         This methods calls compute_heat_map for creating the heat map and then it creates the visualization and saves it
 
@@ -219,7 +226,7 @@ class GradCAM(Visualization):
 
         """
 
-        heat_maps = self.compute_grad_cams(image, gender, age, use_gpu)
+        heat_maps = self.compute_grad_cams(image, use_gpu)
 
         gender_fig = px.imshow(heat_maps[0].cpu().detach().numpy())
         gender_fig.update_layout(coloraxis_showscale=False)
@@ -232,7 +239,6 @@ class GradCAM(Visualization):
         age_fig.update_yaxes(showticklabels=False)
 
         return gender_fig, age_fig
-
 
 
 class SaliencyMap:
@@ -272,7 +278,7 @@ class SaliencyMap:
         self.threshold = threshold
 
     @torch.no_grad()
-    def compute_saliency_map(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool) -> \
+    def compute_saliency_map(self, image: torch.Tensor, use_gpu: bool) -> \
             tuple[torch.Tensor, torch.Tensor]:
         """
         This method creates saliency maps
@@ -338,8 +344,7 @@ class SaliencyMap:
 
             return gender_saliency_map, age_saliency_map
 
-    def visualize(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool = True) -> \
-            tuple[plotly.graph_objs.Figure, plotly.graph_objs.Figure]:
+    def visualize(self, image: torch.Tensor, use_gpu: bool = True) -> tuple[Figure, Figure]:
         """
         This methods generates a saliency map, creates a visualization of it and saves it
 
@@ -358,7 +363,7 @@ class SaliencyMap:
             This methods does not return anything
         """
 
-        gender_saliency_map, age_saliency_map = self.compute_saliency_map(image, gender, age, use_gpu)
+        gender_saliency_map, age_saliency_map = self.compute_saliency_map(image, use_gpu)
 
         gender_saliency_map = gender_saliency_map[0].cpu().detach().numpy()
         gender_saliency_fig = px.imshow(gender_saliency_map)
@@ -382,7 +387,7 @@ class SaliencyMapCombined(SaliencyMap):
 
     # override method
     @torch.no_grad()
-    def compute_saliency_map(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool) -> \
+    def compute_saliency_map(self, image: torch.Tensor, use_gpu: bool) -> \
             tuple[torch.Tensor, torch.Tensor]:
         """
         This method computes combined saliency maps
@@ -482,13 +487,13 @@ class AverageSaliencyMap(SaliencyMap):
         return saliency_map
 
     # overriding abstract method
-    def compute_saliency_map(self, image: torch.Tensor, gender: int, age: float, use_gpu: bool = True) -> \
+    def compute_saliency_map(self, image: torch.Tensor, use_gpu: bool = True) -> \
             tuple[torch.Tensor, torch.Tensor]:
 
         # define device
         device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
 
-        gender_saliency_map, age_saliency_map = super().compute_saliency_map(image, gender, age, use_gpu)
+        gender_saliency_map, age_saliency_map = super().compute_saliency_map(image, use_gpu)
         gender_saliency_map = self._mean_saliency_maps(gender_saliency_map, device)
         age_saliency_map = self._mean_saliency_maps(age_saliency_map, device)
 
