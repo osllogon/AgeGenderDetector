@@ -266,6 +266,7 @@ def log_confussion_matrix(logger, confussion_matrix: ConfusionMatrix, global_ste
     :param logger: tensorboard logger to use for logging
     :param confussion_matrix: confussion matrix from where the metrics are obtained
     :param global_step: global step for the logger
+    :param suffix: suffix for the variable names
     """
     logger.add_scalar(f'acc_global_{suffix}', confussion_matrix.global_accuracy, global_step=global_step)
     logger.add_scalar(f'acc_avg_{suffix}', confussion_matrix.average_accuracy, global_step=global_step)
