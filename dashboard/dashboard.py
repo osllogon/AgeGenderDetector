@@ -550,7 +550,7 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
               Input("dropdown_model", "value"))
 def update_prediction(image, model_name):
     # create zero figure
-    zero_array = np.zeros((200, 200, 3))
+    zero_array = np.zeros((400, 400, 3))
     zero_array[:, :] = 255
     zero_fig = px.imshow(zero_array)
     zero_fig.update_layout(coloraxis_showscale=False)
