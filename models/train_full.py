@@ -1,17 +1,17 @@
 import itertools
 from os import path
-from typing import List, Dict
+from typing import List, Dict, Union, Tuple
 
 import numpy as np
 import torch
 import torch.utils.tensorboard as tb
-import torchvision.transforms
 from PIL import Image
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tqdm.auto import trange, tqdm
+import torchvision.transforms as transforms
 
 from .models import CNNClassifier, save_model, load_model
-from .utils import load_data, save_dict, IMAGE_TRANSFORM_FULL, ConfusionMatrix
+from .utils import IMAGE_TRANSFORM, load_data, save_dict, ConfusionMatrix
 
 
 def train(
@@ -30,12 +30,20 @@ def train(
         device=None,
         steps_save: int = 1,
         use_cpu: bool = False,
-        transforms: List = [torchvision.transforms.RandomHorizontalFlip()],
         loss_age_weight: float = 1e-2,
+        scheduler_patience:int = 10,
+        train_transforms=None,
+        test_transforms=None,
+        suffix:str = '',
+        use_cache:bool=False,
 ):
     """
     Method that trains a given model
 
+    :param use_cache: whether to save the data after the first epoch to speed up training/testing
+    :param suffix: suffix to add to the name of the model
+    :param test_transforms: transformation to be applied to test data
+    :param train_transforms: transformation to be applied to training data
     :param model: model that will be trained
     :param dict_model: dictionary of model parameters
     :param log_dir: directory where the tensorboard log should be saved
@@ -53,6 +61,7 @@ def train(
     :param steps_save: number of epoch after which to validate and save model (if conditions met)
     :param transforms: transformations to apply to the training data for data augmentation
     :param loss_age_weight: weight for the age loss
+    :param scheduler_patience: value used as patience for the learning rate scheduler
     """
 
     # cpu or gpu used for training if available (gpu much faster)
@@ -74,6 +83,7 @@ def train(
         'scheduler_mode',
         'transforms',
         'loss_age_weight',
+        'suffix',
     ]}
     # dictionary to set model name
     name_dict = dict_model.copy()
@@ -113,7 +123,9 @@ def train(
         batch_size=batch_size,
         drop_last=False,
         random_seed=4444,
-        transform=transforms,
+        train_transforms=train_transforms,
+        test_transforms=test_transforms,
+        use_cache=use_cache,
     )
 
     if optimizer_name == "sgd":
@@ -125,11 +137,10 @@ def train(
     else:
         raise Exception("Optimizer not configured")
 
-    # :param scheduler_patience: value used as patience for the learning rate scheduler
     if scheduler_mode in ["min_loss", 'min_mse']:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=scheduler_patience)
     elif scheduler_mode in ["max_acc", "max_val_acc", "max_val_mcc"]:
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=scheduler_patience)
     else:
         raise Exception("Optimizer not configured")
 
@@ -255,6 +266,7 @@ def log_confussion_matrix(logger, confussion_matrix: ConfusionMatrix, global_ste
     :param logger: tensorboard logger to use for logging
     :param confussion_matrix: confussion matrix from where the metrics are obtained
     :param global_step: global step for the logger
+    :param suffix: suffix for the variable names
     """
     logger.add_scalar(f'acc_global_{suffix}', confussion_matrix.global_accuracy, global_step=global_step)
     logger.add_scalar(f'acc_avg_{suffix}', confussion_matrix.average_accuracy, global_step=global_step)
@@ -273,7 +285,9 @@ def test(
         use_cpu: bool = False,
         save: bool = True,
         verbose: bool = False,
-) -> None:
+        transforms=None,
+        use_cache:bool=False,
+) -> List[Dict]:
     """
     Calculates the metric on the test set of the model given in args.
     Prints the result and saves it in the dictionary files.
@@ -287,6 +301,8 @@ def test(
     :param debug_mode: whether to use debug mode (cpu and 0 workers)
     :param save: whether to save the results in the model dict
     :param verbose: whether to print results
+    :param transforms: transformation to be applied to data
+    :param use_cache: whether to save the data after the first epoch to speed up training/testing
     """
 
     def print_v(s):
@@ -303,8 +319,6 @@ def test(
 
     # get model names from folder
     model = None
-    # best_dict = None
-    # best_acc = 0.0
     list_all = []
     paths = list(Path(save_path).glob('*'))
     for folder_path in tqdm(paths):
@@ -320,7 +334,9 @@ def test(
             batch_size=batch_size,
             drop_last=False,
             random_seed=4444,
-            transform=transforms,
+            train_transforms=transforms,
+            test_transforms=transforms,
+            use_cache=use_cache,
         )
 
         # start testing
@@ -347,29 +363,29 @@ def test(
             with torch.no_grad():
                 # train
                 for img, age, gender in loader_train:
-                    img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.predict(img)
+                    img, age, gender = img.to(device), age, gender
+                    pred = model(img).cpu().detach()
 
-                    train_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
-                    train_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
+                    train_run_mse.append(mean_squared_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
+                    train_run_mae.append(mean_absolute_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
                     train_run_cm.add(preds=(pred[:, 0] > 0).float(), labels=gender)
 
                 # valid
                 for img, age, gender in loader_valid:
-                    img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.predict(img)
+                    img, age, gender = img.to(device), age, gender
+                    pred = model(img).cpu().detach()
 
-                    val_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
-                    val_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
+                    val_run_mse.append(mean_squared_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
+                    val_run_mae.append(mean_absolute_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
                     val_run_cm.add(preds=(pred[:, 0] > 0).float(), labels=gender)
 
                 # test
                 for img, age, gender in loader_test:
-                    img, age, gender = img.to(device), age.to(device), gender.to(device)
-                    pred = model.predict(img)
+                    img, age, gender = img.to(device), age, gender
+                    pred = model(img).cpu().detach()
 
-                    test_run_mse.append(mean_squared_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
-                    test_run_mae.append(mean_absolute_error(y_true=age, y_pred=pred[:, 1]).cpu().detach().numpy())
+                    test_run_mse.append(mean_squared_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
+                    test_run_mae.append(mean_absolute_error(y_true=age.numpy(), y_pred=pred[:, 1].numpy()))
                     test_run_cm.add(preds=(pred[:, 0] > 0).float(), labels=gender)
 
             print_v(f"Run {k}: {test_run_cm.global_accuracy}")
@@ -415,27 +431,25 @@ def test(
             test_cm=test_cm,
         ))
 
-        # # save if best
-        # if best_acc < (test_acc := dict_model['test_acc']):
-        #     best_acc = test_acc
-        #     best_dict = dict_model
-
     return list_all
 
 
-def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: float = 0.5,
+def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: bool = True,
                        batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
     """
     Makes a prediction on the input list of images using a certain model
     :param use_gpu: true to use the gpu
-    :param threshold: probability threshold to be considered a woman
+    :param return_pr: if True, it will return the probabilities of the predictions
+                        if False, it will return the predicted labels
     :param batch_size: size of batches to use
     :param model: torch model to use
     :param list_imgs: list of paths of the images used as input of the prediction
     :return: pytorch tensor of predictions over the input images (len(list_images),2)
     """
-    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')
-    print(device)
+    device = torch.device('cuda' if torch.cuda.is_available() and use_gpu else 'cpu')\
+
+    # define threshold for prediction
+    threshold = 0.5
 
     # batch size cannot higher than length of images
     if len(list_imgs) < batch_size:
@@ -451,12 +465,15 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], threshold: 
         images = list_imgs[k:k + batch_size]
         img_tensor = []
         for p in images:
-            img_tensor.append(IMAGE_TRANSFORM_FULL(Image.open(p)))
+            img_tensor.append(IMAGE_TRANSFORM(Image.open(p)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict
         pred = model(img_tensor)  # result (B, 2)
-        pred[:, 0] = (torch.sigmoid(pred[:, 0]) > threshold).float()
+        # return gender probabilities or predicted label
+        pred[:, 0] = torch.sigmoid(pred[:, 0])
+        if not return_pr:
+            pred[:, 0] = (pred[:, 0] > threshold).float()
         predictions.append(pred.cpu().detach())
 
     return torch.cat(predictions, dim=0)
@@ -471,8 +488,17 @@ if __name__ == '__main__':
         block_conv_layers=[3],
         residual=[True],
         max_pooling=[True, False],
-        # training param
-        transforms=[torchvision.transforms.RandomHorizontalFlip()]
+        transforms=[
+            (
+                '1',
+                transforms.Compose([
+                    transforms.Resize(size=(400, 400)),
+                    transforms.RandomHorizontalFlip(),
+                ]),
+                transforms.Resize(size=(400, 400)),
+                True,
+            )
+        ]
     )
 
     list_model = [dict(zip(dict_model.keys(), k)) for k in itertools.product(*dict_model.values())]
@@ -490,15 +516,18 @@ if __name__ == '__main__':
             lr=1e-2,
             optimizer_name="adamw",
             n_epochs=65,
-            batch_size=64,
+            batch_size=16,
             num_workers=2,
             scheduler_mode='min_mse',
             debug_mode=False,
             device=None,
             steps_save=1,
             use_cpu=False,
-            transforms=transforms,
             loss_age_weight=1e-2,
+            train_transforms=transforms[1],
+            test_transforms=transforms[2],
+            suffix=transforms[0],
+            use_cache=transforms[3]
         )
 
 #     from argparse import ArgumentParser

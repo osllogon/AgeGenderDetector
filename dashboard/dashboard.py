@@ -1,9 +1,7 @@
 # machine learning imports
 import os
-import tempfile
 
 import numpy as np
-import pandas as pd
 import torch
 import torchvision
 from PIL import Image
@@ -12,27 +10,24 @@ from PIL import Image
 import pathlib
 import base64
 
-# visualiation imports
+# visualization imports
 import dash
 from dash import dcc
 from dash import html
 import dash_bootstrap_components as dbc
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import plotly.express as px
-import plotly.graph_objects as go
 
 # own imports
-from models.train import predict_age_gender
-from models.models import CNNClassifier, load_model_from_name
-from models.utils import load_list, load_dict, LABEL_GENDER
-from .visualize import visualize_datasets_age, visualize_datasets_gender, \
-    get_datasets, visualize_model, OriginalSaliencyMap, HeatMap, SaliencyMapCombined, IntegratedSaliencyMap
+from models.train_full import predict_age_gender
+from models.models import CNNClassifier, load_model
+from models.utils import load_dict, LABEL_GENDER
+from .visualize import SaliencyMap, GradCAM, SaliencyMapCombined, AverageSaliencyMap
 
-# Variables globales
-MODELS_PATH = 'models/savedAgeGender'
-DATA_PATH = "./data/UTKFace"
+# global variables
+MODELS_PATH = 'models/saved_full'
 # if true, heat maps will be showed
-SHOW_HEAT_MAPS = False
+SHOW_HEAT_MAPS = True
 # if true, only the prediction to the uploaded image will be showed (this overwrites SHOW_HEAT_MAPS)
 NO_MAPS = False
 # if true it will try to use the GPU (faster)
@@ -41,7 +36,7 @@ device = torch.device('cuda' if torch.cuda.is_available() and USE_GPU else 'cpu'
 
 curr_model = {}
 
-# Inicializamos la aplicacion de dash
+# initialize dash app
 app = dash.Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 TITLE_STYLE = {
@@ -50,56 +45,8 @@ TITLE_STYLE = {
     "margin": "30px"
 }
 
-# Get figures
-datasets = get_datasets(DATA_PATH)
-figures_dist_age = visualize_datasets_age(datasets)
-figures_dist_gender = visualize_datasets_gender(datasets)
-
-best_models = load_list(f'{MODELS_PATH}/bestModels.txt')
-options_models = {
-    k.name[:-3]: {'label': f'Best: {k.name[:-3]}' if k.name[:-3] in best_models else k.name[:-3], 'value': k.name[:-3]}
-    for k in list(pathlib.Path().glob(f'{MODELS_PATH}/*.th'))}
-
-# Tabs content
-tab_exploratory = html.Div(
-    id="content-exploratory",
-    style={"display": 'None'},
-    children=[
-        # Explanatory info
-        html.H2(
-            children=["Explanatory information"],
-            id="title_explanatory",
-            style=TITLE_STYLE
-        ),
-        html.Div(
-            children=[
-                dcc.Graph(
-                    figure=figures_dist_age[0],
-                    id="figures_dist_age_bar",
-                    style={
-                        "display": "inline-block",
-                        "width": '50%'
-                    }
-                ),
-                dcc.Graph(
-                    figure=figures_dist_age[1],
-                    id="figures_dist_age_box",
-                    style={
-                        "display": "inline-block",
-                        "width": '50%'
-                    }
-                ),
-                dcc.Graph(
-                    figure=figures_dist_gender,
-                    id="figures_dist_gender",
-                    style={
-                        "display": "block",
-                    }
-                )
-            ]
-        )
-    ]
-)
+# best_models = load_list(f'{MODELS_PATH}/bestModels.txt')
+options_models = {k: {'label': k, 'value': k} for k in os.listdir(MODELS_PATH)}
 
 tab_result = html.Div(
     id="content-result",
@@ -122,30 +69,6 @@ tab_result = html.Div(
                         "margin-left": "15%",
                         "width": "70%"
                     }
-                ),
-                dcc.Loading(
-                    id="loading_model",
-                    type="default",
-                    children=[
-                        dcc.Graph(
-                            id="figure_datasets_metrics",
-                            style={
-                                "display": "block",
-                            }
-                        ),
-                        dcc.Graph(
-                            id="figure_age_error_metrics",
-                            style={
-                                "display": "block",
-                            }
-                        ),
-                        dcc.Graph(
-                            id="figure_age_error_metrics_line",
-                            style={
-                                "display": "block",
-                            }
-                        )
-                    ]
                 )
             ]
         ),
@@ -179,10 +102,10 @@ tab_result = html.Div(
         ),
         dcc.Upload(
             id='upload-image',
-            children=html.Div([
-                'Drag and Drop or ',
-                html.A('Select Files')
-            ]),
+            # children=html.Div([
+            #     'Drag and Drop or Select Files'
+            # ]),
+            children='Drag and Drop or Select File',
             style={
                 'width': '50%',
                 'height': '60px',
@@ -222,12 +145,6 @@ tab_result = html.Div(
                             },
                         )
                     ]
-                ),
-                # Prediction results
-                html.H2(
-                    children=["Results"],
-                    id="results_title",
-                    style=TITLE_STYLE
                 ),
                 html.Div(
                     children=[
@@ -288,9 +205,9 @@ tab_result = html.Div(
                         "margin-top": "2%"
                     }
                 ),
-                # saliency maps images
+                # XAI
                 html.H2(
-                    children=["Maps"],
+                    children=["XAI"],
                     id="maps_title",
                     style=TITLE_STYLE
                 ),
@@ -354,12 +271,12 @@ tab_result = html.Div(
                         )
                     ]
                 ),
-                # integrated saliency maps images
+                # average saliency maps images
                 html.Div(
                     children=[
                         dbc.Card(
                             [
-                                dbc.CardHeader("Integrated Saliency Maps",
+                                dbc.CardHeader("Average Saliency Maps",
                                                style={'text-align': 'center'}),
                                 dbc.CardBody(
                                     [
@@ -372,7 +289,7 @@ tab_result = html.Div(
                                                         dbc.CardBody(
                                                             [
                                                                 dcc.Graph(
-                                                                    id="integrated_saliency_map_age"
+                                                                    id="average_saliency_map_age"
                                                                 ),
                                                             ]
                                                         ),
@@ -391,7 +308,7 @@ tab_result = html.Div(
                                                         dbc.CardBody(
                                                             [
                                                                 dcc.Graph(
-                                                                    id="integrated_saliency_map_gender"
+                                                                    id="average_saliency_map_gender"
                                                                 )
                                                             ]
                                                         ),
@@ -567,13 +484,11 @@ app.layout = html.Div(
                 # tabs
                 dcc.Tabs(
                     id="tabs",
-                    value="tab-exploratory",
+                    value="tab-results",
                     children=[
-                        dcc.Tab(label="Exploratory", value="tab-exploratory"),
-                        dcc.Tab(label="Results", value="tab-results")
+                        dcc.Tab(label="", value="tab-results")
                     ]
                 ),
-                tab_exploratory,
                 tab_result
             ]
         )
@@ -583,49 +498,19 @@ app.layout = html.Div(
 
 # Tabs control
 @app.callback(
-    Output("content-exploratory", "style"),
     Output("content-result", "style"),
     Input('tabs', 'value')
 )
 def render_content(tab):
     if tab == 'tab-exploratory':
-        return {"display": 'block'}, {"display": 'none'}
+        return {"display": 'none'}
     elif tab == 'tab-results':
-        return {"display": 'none'}, {"display": 'block'}
+        return {"display": 'block'}
     else:
-        return {"display": 'none'}, {"display": 'none'}
+        return {"display": 'none'}
 
 
-# Dropdown model
-@app.callback(
-    Output("figure_datasets_metrics", "figure"),
-    Output("figure_age_error_metrics", "figure"),
-    Output("figure_age_error_metrics_line", "figure"),
-    Output("figure_datasets_metrics", "style"),
-    Output("figure_age_error_metrics", "style"),
-    Output("figure_age_error_metrics_line", "style"),
-    Input("dropdown_model", "value")
-)
-def dropdown_model(model_name):
-    if model_name is None:
-        return go.Figure(), go.Figure(), go.Figure(), {"display": 'block'}, {"display": 'none'}, {"display": 'none'}
-
-    if model_name != curr_model.get("name", ""):
-        curr_model["name"] = model_name
-        curr_model["model"] = load_model_from_name(f"{MODELS_PATH}/{model_name}").to(device)
-    model = curr_model["model"]
-
-    return *visualize_model(
-        # f"{MODELS_PATH}/{model}",
-        model,
-        DATA_PATH,
-        num_workers=0,
-        batch_size=32,
-        use_gpu=USE_GPU
-    ), {"display": 'block'}, {"display": 'block'}, {"display": 'block'}
-
-
-# Predict footer
+# predict footer
 @app.callback(Output('age_footer', 'children'),
               Output('gender_footer', 'children'),
               Output('age_complete_card', 'color'),
@@ -638,6 +523,7 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
     if age_prediction != '' and gender_prediction != '' and age is not None and gender is not None:
         age_prediction = int(age_prediction)
         age = int(age)
+        gender_prediction = gender_prediction.split('(')[0].strip()
         age_result = 'correct' if np.abs(age - age_prediction) <= 10 else 'incorrect'
         gender_result = 'correct' if gender_prediction == gender else 'incorrect'
         age_color = 'success' if np.abs(age - age_prediction) <= 10 else 'danger'
@@ -647,12 +533,13 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
         return '', '', 'primary', 'primary'
 
 
-# Update Maps
-@app.callback(Output('figure_original_image', 'figure'),
+# update Maps
+@app.callback(Output('upload-image', 'children'),
+              Output('figure_original_image', 'figure'),
               Output('saliency_map_age', 'figure'),
               Output('saliency_map_gender', 'figure'),
-              Output('integrated_saliency_map_age', 'figure'),
-              Output('integrated_saliency_map_gender', 'figure'),
+              Output('average_saliency_map_age', 'figure'),
+              Output('average_saliency_map_gender', 'figure'),
               Output('saliency_map_combined_age', 'figure'),
               Output('saliency_map_combined_gender', 'figure'),
               Output('heat_map_age', 'figure'),
@@ -662,82 +549,108 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
               Input('upload-image', 'contents'),
               Input("dropdown_model", "value"))
 def update_prediction(image, model_name):
-    zero_array = np.zeros((200, 200, 3))
+    # create zero figure
+    zero_array = np.zeros((400, 400, 3))
     zero_array[:, :] = 255
     zero_fig = px.imshow(zero_array)
     zero_fig.update_layout(coloraxis_showscale=False)
     zero_fig.update_xaxes(showticklabels=False)
     zero_fig.update_yaxes(showticklabels=False)
 
-    if image is None:
-        return zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, "", ""
+    try:
+        # set normal response for upload image
+        normal_response = 'Drag and Drop or Select File'
 
-    data = image.encode("utf8").split(b";base64,")[1]
-    # temp_dir = tempfile.TemporaryDirectory()
-    # temp_img = f'{temp_dir.name}/image.jpg'
-    temp_dir = "temporary"
-    temp_img = f'{temp_dir}/image.jpg'
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
-    with open(temp_img, 'wb') as fp:
-        fp.write(base64.decodebytes(data))
+        # check if image is not None
+        if image is None:
+            return normal_response, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+                   zero_fig, "", ""
 
-    transforms = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor()
-    ])
+        # check if the image is in correct format
+        if image.split(';')[0].split('/')[-1] != 'jpeg':
+            return 'File must be a JPG image', zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+                   zero_fig, zero_fig, "", ""
 
-    image = Image.open(temp_img)
-    image = transforms(image)
-    original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
-    original_fig = px.imshow(original_image.detach().numpy())
-    original_fig.update_layout(coloraxis_showscale=False)
-    original_fig.update_xaxes(showticklabels=False)
-    original_fig.update_yaxes(showticklabels=False)
+        # save image in temporary directory
+        data = image.encode("utf8").split(b";base64,")[1]
+        temp_dir = "temporary"
+        temp_img = f'{temp_dir}/image.jpg'
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+        with open(temp_img, 'wb') as fp:
+            fp.write(base64.decodebytes(data))
 
-    if model_name is not None:
-        if model_name != curr_model.get("name", ""):
-            curr_model["name"] = model_name
-            curr_model["model"] = load_model_from_name(f"{MODELS_PATH}/{model_name}").to(device)
-        model = curr_model["model"]
-
-        predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
-        gender = int(predictions[0][0].item())
-        age = predictions[0][1].item()
-
+        # preprocess image for visualizations
+        transforms = torchvision.transforms.Compose([
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Resize(size=(400, 400)),
+        ])
+        image = Image.open(temp_img)
+        image = transforms(image)
         image = image.to(device)
 
-        dict_model = load_dict(f"{MODELS_PATH}/{model_name}.dict")
-        model = CNNClassifier(**dict_model).to(device)
-        model.load_state_dict(torch.load(f"{MODELS_PATH}/{model_name}.th"))
+        # create original image visualization
+        original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
+        original_fig = px.imshow(original_image.detach().cpu().numpy())
+        original_fig.update_layout(coloraxis_showscale=False)
+        original_fig.update_xaxes(showticklabels=False)
+        original_fig.update_yaxes(showticklabels=False)
 
-        original_saliency_map = OriginalSaliencyMap(model)
-        saliency_map_gender, saliency_map_age = original_saliency_map.visualize(image.unsqueeze(0),
-                                                                                gender, age, use_gpu=USE_GPU)
-        integrated_saliency_map = IntegratedSaliencyMap(model)
-        integrated_saliency_map_gender, integrated_saliency_map_age = integrated_saliency_map.visualize(
-            image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
+        if model_name is not None:
+            # update current model
+            if model_name != curr_model.get("name", ""):
+                curr_model["name"] = model_name
+                curr_model["model"] = load_model(pathlib.Path(f"{MODELS_PATH}/{model_name}"))[0].to(device)
+            model = curr_model["model"]
 
-        saliency_map_combined = SaliencyMapCombined(model)
-        saliency_map_combined_gender, saliency_map_combined_age = saliency_map_combined.visualize(image.unsqueeze(0),
-                                                                                                  gender, age,
-                                                                                                  use_gpu=USE_GPU)
+            # make predictions
+            predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
+            gender = round(predictions[0][0].item())
+            confidence = predictions[0][0].item() * 100 if gender == 1 else (100 - predictions[0][0].item() * 100)
+            age = predictions[0][1].item()
 
-        if NO_MAPS:
-            return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), LABEL_GENDER[gender]
+            # load model
+            dict_model = load_dict(f"{MODELS_PATH}/{model_name}/{model_name}.dict")
+            model = CNNClassifier(**dict_model).to(device)
+            model.load_state_dict(torch.load(f"{MODELS_PATH}/{model_name}/{model_name}.th"))
 
-        if SHOW_HEAT_MAPS:
-            heat_map = HeatMap(model)
-            heat_map_gender, heat_map_age = heat_map.visualize(image.unsqueeze(0), gender, age, use_gpu=USE_GPU)
+            # compute original saliency maps
+            original_saliency_map = SaliencyMap(model)
+            saliency_map_gender, saliency_map_age = original_saliency_map.visualize(image.unsqueeze(0), use_gpu=USE_GPU)
 
-            return original_fig, saliency_map_age, saliency_map_gender, integrated_saliency_map_age, \
-                   integrated_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
-                   heat_map_age, heat_map_gender, str(int(age)), LABEL_GENDER[gender]
+            # compute average saliency maps
+            average_saliency_map = AverageSaliencyMap(model)
+            average_saliency_map_gender, average_saliency_map_age = average_saliency_map.visualize(
+                image.unsqueeze(0), use_gpu=USE_GPU)
+
+            # compute combined saliency maps
+            saliency_map_combined = SaliencyMapCombined(model)
+            saliency_map_combined_gender, saliency_map_combined_age = \
+                saliency_map_combined.visualize(image.unsqueeze(0), use_gpu=USE_GPU)
+
+            if NO_MAPS:
+                return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, str(int(age)), \
+                       f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
+
+            if SHOW_HEAT_MAPS:
+                # compute heat maps visualizations
+                heat_map = GradCAM(model)
+                heat_map_gender, heat_map_age = heat_map.visualize(image.unsqueeze(0), use_gpu=USE_GPU)
+
+                return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+                       average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
+                       heat_map_age, heat_map_gender, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
+            else:
+                return normal_response, original_fig, saliency_map_age, saliency_map_gender, average_saliency_map_age, \
+                       average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
+                       zero_fig, zero_fig, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
         else:
-            return original_fig, saliency_map_age, saliency_map_gender, integrated_saliency_map_age, \
-                   integrated_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
-                   zero_fig, zero_fig, str(int(age)), LABEL_GENDER[gender]
-    else:
-        return original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, "", ""
+            return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+                   zero_fig, zero_fig, "", ""
+
+    except:
+        return 'There has been an error, please try again', zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
+               zero_fig, zero_fig, zero_fig, zero_fig, "", ""
 
 
 if __name__ == '__main__':

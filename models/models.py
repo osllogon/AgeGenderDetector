@@ -2,8 +2,11 @@ import pathlib
 from typing import List, Dict, Optional, Tuple
 
 import torch
+from torchvision import transforms
+import torchvision
+import numpy as np
 
-from models.utils import load_dict
+from models.utils import load_dict, save_dict
 
 
 class CNNClassifier(torch.nn.Module):
@@ -137,22 +140,49 @@ class CNNClassifier(torch.nn.Module):
         return self.classifier(self.net(x).mean(dim=[2, 3]))
 
 
-class CNNClassifierTransforms(CNNClassifier):
-    def __init__(self, pred_transforms, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.pred_transforms = pred_transforms
-        self.to_tensor = transforms.ToTensor()
 
-    def predict(self, x):
-        if self.pred_transforms is not None:
-            x = self.pred_transforms(x)
-        x = self.to_tensor(x)
-        return self(x)
+class ResNetClassifier(torch.nn.Module):
+    """
+    ResNet to be used to classify
+    """
+    def __init__(self, out_channels: int = 1, resnet_arch:str = 'resnet152', **kwargs):
+        """
+        Initialization of the classifier
+        It uses pretrained ResNet architecture
+        
+        :param out_channels: number of channels produced by the convolution
+        :param resnet_arch: pretrained ResNet architecture to use. Obtained from https://pytorch.org/hub/pytorch_vision_resnet/
+        """
+        super().__init__()
+        # normalization for pretrained
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # pretrained architecture
+        self.net = torch.hub.load('pytorch/vision:v0.10.0', resnet_arch, pretrained=True)
+        self.net.avgpool = torch.nn.Identity()
+        self.net.fc = torch.nn.Identity()
+        # specific classifier
+        self.classifier = torch.nn.Linear(512, out_channels)
+
+    def forward(self, x: torch.Tensor):
+        """
+        Method which runs the given input through the classifier
+        :param x: torch.Tensor((B,C_in,H,W))
+        :return: torch.Tensor((B,C_out))
+        """
+        x = self.normalize(x)
+        x = self.net(x)
+        
+        # unflatten
+        d = int(np.sqrt(x.shape[1] / 512).item())
+        x = x.reshape(-1, 512, d, d)
+
+        x = x.mean(dim=[2, 3])
+        return self.classifier(x)
 
 
 MODEL_CLASS = {
     'cnn': CNNClassifier,
-    'cnn_t': CNNClassifierTransforms,
+    'resnet': ResNetClassifier,
 }
 
 MODEL_CLASS_KEY = 'model_class'
@@ -206,7 +236,6 @@ def load_model(folder_path: pathlib.Path, model_class: Optional[str] = None) -> 
     :param model_class: one of the model classes in `MODEL_CLASS` dict. If none, it is obtained from the dictionary
     :return: the loaded model and the dictionary of parameters
     """
-    # todo so it does not need to have the same name
     path = f"{folder_path.absolute()}/{folder_path.name}"
     # use pickle instead
     dict_model = load_dict(f"{path}.dict.pickle")
