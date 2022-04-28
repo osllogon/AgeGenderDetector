@@ -550,7 +550,7 @@ def update_footer(age_prediction, gender_prediction, age, gender) -> tuple[str, 
               Input("dropdown_model", "value"))
 def update_prediction(image, model_name):
     # create zero figure
-    zero_array = np.zeros((400, 400, 3))
+    zero_array = np.zeros((200, 200, 3))
     zero_array[:, :] = 255
     zero_fig = px.imshow(zero_array)
     zero_fig.update_layout(coloraxis_showscale=False)
@@ -580,22 +580,6 @@ def update_prediction(image, model_name):
         with open(temp_img, 'wb') as fp:
             fp.write(base64.decodebytes(data))
 
-        # preprocess image for visualizations
-        transforms = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Resize(size=(400, 400)),
-        ])
-        image = Image.open(temp_img)
-        image = transforms(image)
-        image = image.to(device)
-
-        # create original image visualization
-        original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
-        original_fig = px.imshow(original_image.detach().cpu().numpy())
-        original_fig.update_layout(coloraxis_showscale=False)
-        original_fig.update_xaxes(showticklabels=False)
-        original_fig.update_yaxes(showticklabels=False)
-
         if model_name is not None:
             # update current model
             if model_name != curr_model.get("name", ""):
@@ -604,6 +588,23 @@ def update_prediction(image, model_name):
                 curr_model["model"] = m[0]
                 curr_model['dict_model'] = m[1]
             model = curr_model["model"]
+
+            # preprocess image for visualizations
+            img_size = int(curr_model['dict_model']['train_suffix'])
+            transforms = torchvision.transforms.Compose([
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Resize(size=(img_size, img_size)),
+            ])
+            image = Image.open(temp_img)
+            image = transforms(image)
+            image = image.to(device)
+
+            # create original image visualization
+            original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
+            original_fig = px.imshow(original_image.detach().cpu().numpy())
+            original_fig.update_layout(coloraxis_showscale=False)
+            original_fig.update_xaxes(showticklabels=False)
+            original_fig.update_yaxes(showticklabels=False)
 
             # make predictions
             predictions = predict_age_gender(model, curr_model['dict_model'], [temp_img], use_gpu=USE_GPU)
@@ -647,6 +648,22 @@ def update_prediction(image, model_name):
                        average_saliency_map_gender, saliency_map_combined_age, saliency_map_combined_gender, \
                        zero_fig, zero_fig, str(int(age)), f'{LABEL_GENDER[gender]} ({confidence:.2f} %)'
         else:
+            # preprocess image for visualizations
+            transforms = torchvision.transforms.Compose([
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Resize(size=(400, 400)),
+            ])
+            image = Image.open(temp_img)
+            image = transforms(image)
+            image = image.to(device)
+
+            # create original image visualization
+            original_image = torch.swapaxes(torch.swapaxes(image, 0, 2), 0, 1)
+            original_fig = px.imshow(original_image.detach().cpu().numpy())
+            original_fig.update_layout(coloraxis_showscale=False)
+            original_fig.update_xaxes(showticklabels=False)
+            original_fig.update_yaxes(showticklabels=False)
+
             return normal_response, original_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, zero_fig, \
                    zero_fig, zero_fig, "", ""
 

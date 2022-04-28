@@ -11,7 +11,7 @@ from tqdm.auto import trange, tqdm
 import torchvision.transforms as transforms
 
 from .models import CNNClassifier, save_model, load_model
-from .utils import IMAGE_TRANSFORM, load_data, save_dict, ConfusionMatrix, get_image_transform
+from .utils import load_data, save_dict, ConfusionMatrix, get_image_transform
 
 
 def train(
@@ -465,6 +465,7 @@ def predict_age_gender(
     # Load model
     model = model.to(device)
     model.eval()
+    img_size = int(model_dict['train_suffix'])
 
     predictions = []
     for k in range(0, len(list_imgs) - batch_size + 1, batch_size):
@@ -472,7 +473,7 @@ def predict_age_gender(
         images = list_imgs[k:k + batch_size]
         img_tensor = []
         for p in images:
-            img_tensor.append(get_image_transform(int(model_dict['train_suffix']))(Image.open(p)))
+            img_tensor.append(get_image_transform((img_size,img_size))(Image.open(p)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict
