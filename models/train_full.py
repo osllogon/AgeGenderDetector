@@ -11,7 +11,7 @@ from tqdm.auto import trange, tqdm
 import torchvision.transforms as transforms
 
 from .models import CNNClassifier, save_model, load_model
-from .utils import IMAGE_TRANSFORM, load_data, save_dict, ConfusionMatrix
+from .utils import IMAGE_TRANSFORM, load_data, save_dict, ConfusionMatrix, get_image_transform
 
 
 def train(
@@ -434,8 +434,14 @@ def test(
     return list_all
 
 
-def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: bool = True,
-                       batch_size: int = 32, use_gpu: bool = True) -> torch.Tensor:
+def predict_age_gender(
+        model: torch.nn.Module,
+        model_dict: Dict,
+        list_imgs: List[str],
+        return_pr: bool = True,
+        batch_size: int = 32,
+        use_gpu: bool = True
+) -> torch.Tensor:
     """
     Makes a prediction on the input list of images using a certain model
     :param use_gpu: true to use the gpu
@@ -443,6 +449,7 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: 
                         if False, it will return the predicted labels
     :param batch_size: size of batches to use
     :param model: torch model to use
+    :param model_dict: dictionary of parameters
     :param list_imgs: list of paths of the images used as input of the prediction
     :return: pytorch tensor of predictions over the input images (len(list_images),2)
     """
@@ -465,7 +472,7 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: 
         images = list_imgs[k:k + batch_size]
         img_tensor = []
         for p in images:
-            img_tensor.append(IMAGE_TRANSFORM(Image.open(p)))
+            img_tensor.append(get_image_transform(int(model_dict['train_suffix']))(Image.open(p)))
         img_tensor = torch.stack(img_tensor, dim=0).to(device)
 
         # Predict
@@ -476,7 +483,11 @@ def predict_age_gender(model: torch.nn.Module, list_imgs: List[str], return_pr: 
             pred[:, 0] = (pred[:, 0] > threshold).float()
         predictions.append(pred.cpu().detach())
 
-    return torch.cat(predictions, dim=0)
+    res = torch.cat(predictions, dim=0)
+
+    # force positive ages
+    res[:,1] = res[:,1].square().sqrt()
+    return res
 
 
 if __name__ == '__main__':

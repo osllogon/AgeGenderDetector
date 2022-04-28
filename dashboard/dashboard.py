@@ -600,11 +600,13 @@ def update_prediction(image, model_name):
             # update current model
             if model_name != curr_model.get("name", ""):
                 curr_model["name"] = model_name
-                curr_model["model"] = load_model(pathlib.Path(f"{MODELS_PATH}/{model_name}"))[0].to(device)
+                m = load_model(pathlib.Path(f"{MODELS_PATH}/{model_name}"))
+                curr_model["model"] = m[0]
+                curr_model['dict_model'] = m[1]
             model = curr_model["model"]
 
             # make predictions
-            predictions = predict_age_gender(model, [temp_img], use_gpu=USE_GPU)
+            predictions = predict_age_gender(model, curr_model['dict_model'], [temp_img], use_gpu=USE_GPU)
             gender = round(predictions[0][0].item())
             confidence = predictions[0][0].item() * 100 if gender == 1 else (100 - predictions[0][0].item() * 100)
             age = predictions[0][1].item()

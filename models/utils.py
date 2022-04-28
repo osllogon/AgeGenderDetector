@@ -19,11 +19,16 @@ import seaborn as sns
 from glob import glob
 
 LABEL_GENDER = ['man', 'woman']
-IMAGE_SIZE = (400, 400)
-IMAGE_TRANSFORM = torchvision.transforms.Compose([
-    torchvision.transforms.Resize(IMAGE_SIZE),
-    torchvision.transforms.ToTensor()
-])
+
+
+# IMAGE_SIZE = (400, 400)
+# IMAGE_TRANSFORM =
+
+def get_image_transform(size):
+    return torchvision.transforms.Compose([
+        torchvision.transforms.Resize(size),
+        torchvision.transforms.ToTensor()
+    ])
 
 
 class AgeGenderDataset(Dataset):
@@ -50,7 +55,7 @@ class AgeGenderDataset(Dataset):
         image_tmp = image_names.copy()
         for k in range(len(self)):
             age, gender = self.get_target(k)
-            if age < 0 or (gender !=0 and gender!=1):
+            if age < 0 or (gender != 0 and gender != 1):
                 image_tmp.remove(self.image_names[k])
         self.image_names = image_tmp
 
@@ -86,13 +91,14 @@ class AgeGenderDataset(Dataset):
             image = self.to_tensor(image)
             if self.transform is not None:
                 image = self.transform(image)
-            
+
             if self.use_cache:
                 save_pickle(image, path)
 
         # image, age, gender
         age, gender = self.get_target(idx)
         return image, np.float32(age), np.float32(gender)
+
 
 # todo add option to train cache
 
@@ -132,7 +138,8 @@ def load_data(
     # Create datasets
     datasets = [AgeGenderDataset(image_names[:lengths[0]], transform=train_transforms, **kwargs)]
     datasets.extend(
-        [AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]], transform=test_transforms, **kwargs) for k in range(len(lengths) - 1)])
+        [AgeGenderDataset(image_names[lengths[k]:lengths[k + 1]], transform=test_transforms, **kwargs) for k in
+         range(len(lengths) - 1)])
     datasets.append(AgeGenderDataset(image_names[lengths[-1]:], transform=test_transforms, **kwargs))
 
     # Return DataLoaders for the datasets
