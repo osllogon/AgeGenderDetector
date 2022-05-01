@@ -53,18 +53,13 @@ We have obtained the following metrics:
   - Gender accuracy: 0.915
   - Age MSE: 75.28
 
-### Dash Images
+## Steps to run web app
 
-Datasets data:
-![datasets](example_imgs/datasets.png)
+From the main project folder (/AgeGenderDetector) run the following commands:
 
-Model metrics (best model selected):
-![metrics](example_imgs/metrics.png)
+- pip install -r requirements.txt
+- python -m dashboard.dashboard
 
-Prediction tool (the age has an error margin):
-![prediction](example_imgs/prediction.png)
 
-Saliency maps:
-![saliency_maps](example_imgs/saliency_maps.png)
 
 
