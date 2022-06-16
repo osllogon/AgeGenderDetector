@@ -5,7 +5,8 @@
     - [Data Explanation](#data-explanation)
   - [Model Full](#model-full)
   - [Model Cropped](#model-cropped)
-    - [Dash Images](#dash-images)
+    - [Dash images](#dash-images)
+  - [Steps to run web app](#steps-to-run-web-app)
   
 
 ## Data
@@ -53,12 +54,30 @@ We have obtained the following metrics:
   - Gender accuracy: 0.915
   - Age MSE: 75.28
 
+### Dash images
+
+Prediction tool (the age has an error margin):
+![prediction](cropped/example_imgs/prediction.png)
+
+Saliency maps:
+![saliency_maps](cropped/example_imgs/saliency_maps.png)
+
+Model metrics (best model selected):
+![metrics](cropped/example_imgs/metrics.png)
+
 ## Steps to run web app
 
-From the main project folder (/AgeGenderDetector) run the following commands:
+From the main project folder (AgeGenderDetector/) run the following command:
 
-- pip install -r requirements.txt
-- python -m dashboard.dashboard
+```shell
+pip install -r requirements.txt
+```
+
+Then, from one of the main folders (AgeGenderDetector/full/ or AgeGenderDetector/cropped/) run the following command:
+
+```shell
+python -m dashboard.dashboard
+```
 
 
 

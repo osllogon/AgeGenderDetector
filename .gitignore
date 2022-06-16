@@ -1,10 +1,10 @@
 # Folders
-data/
-data_full/
+**/data/
+**/data_full/
 .idea/
-temporary/
+**/temporary/
 **/tmp*/
-notebooks/models/
+**/notebooks/models/
 **/cache/
 
 
